@@ -17,10 +17,12 @@ jobs:
   build:
     name: Assemble debug and release APKs
     runs-on: ubuntu-latest
+    timeout-minutes: 40
 
     env:
       # Secrets cannot be read from an `if:` directly, so surface it as an env flag.
       HAS_CI_KEYSTORE: ${{ secrets.KEYSTORE_BASE64 != '' }}
+      GRADLE_OPTS: -Dorg.gradle.daemon=false -Dorg.gradle.welcome=never
 
     steps:
       - name: Check out the repository
@@ -35,8 +37,28 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      - name: Show the toolchain we were given
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+          java -version
+          nproc && free -m
+          ls "$ANDROID_HOME/platforms" 2>/dev/null || echo "no platforms dir"
+          ls "$ANDROID_HOME/build-tools" 2>/dev/null || echo "no build-tools dir"
+
+      - name: Install the SDK packages this build needs
+        timeout-minutes: 10
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "platforms;android-34" "build-tools;34.0.0" "platform-tools" < /dev/null || true
+
       - name: Make gradlew executable
         run: chmod +x ./gradlew
+
+      - name: Warm up Gradle
+        timeout-minutes: 10
+        run: ./gradlew --version --console=plain < /dev/null
 
       - name: Use the signing key from repository secrets
         if: env.HAS_CI_KEYSTORE == 'true'
@@ -54,11 +76,9 @@ jobs:
             echo "keyPassword=$KEY_PASSWORD"
           } > keystore.properties
 
-      - name: Build release APK
-        run: ./gradlew --no-daemon assembleRelease
-
-      - name: Build debug APK
-        run: ./gradlew --no-daemon assembleDebug
+      - name: Build both APKs
+        timeout-minutes: 25
+        run: ./gradlew assembleDebug assembleRelease --console=plain --stacktrace < /dev/null
 
       - name: Collect artifacts
         run: |
