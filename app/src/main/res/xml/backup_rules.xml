@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Only the drawings and the reminder preferences are worth restoring. Anything
+  not listed here is excluded already, so there is no <exclude> for the camera
+  scratch directory: it lives in the cache, which is never backed up.
+-->
 <full-backup-content>
-    <include domain="file" path="drawings/" />
+    <include domain="file" path="drawings" />
     <include domain="sharedpref" path="drawit_prefs.xml" />
-    <exclude domain="file" path="capture/" />
 </full-backup-content>

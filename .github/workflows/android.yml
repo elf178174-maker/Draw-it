@@ -57,7 +57,23 @@ jobs:
 
       - name: Build both APKs
         timeout-minutes: 30
-        run: ./gradlew assembleDebug assembleRelease --console=plain --stacktrace
+        run: ./gradlew assembleDebug assembleRelease --console=plain
+
+      # Lint failures are reported through a report file rather than stdout, and
+      # the Gradle stack trace buries them. Print it so the log says what broke.
+      - name: Show the lint report
+        if: failure()
+        run: |
+          for f in app/build/reports/lint-results-*.txt; do
+            [ -f "$f" ] || continue
+            echo "===== $f ====="
+            cat "$f"
+          done
+          for f in app/build/reports/lint-results-*.xml; do
+            [ -f "$f" ] || continue
+            echo "===== $f ====="
+            cat "$f"
+          done
 
       - name: Collect artifacts
         run: |
