@@ -33,6 +33,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -42,9 +43,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.drawit.app.AppViewModel
@@ -52,15 +57,16 @@ import com.drawit.app.R
 import com.drawit.app.data.Drawing
 import com.drawit.app.ui.components.Entrance
 import com.drawit.app.ui.components.PaperCard
-import com.drawit.app.ui.components.pressable
 import com.drawit.app.ui.components.PrimaryButton
 import com.drawit.app.ui.components.SectionLabel
+import com.drawit.app.ui.components.StreakHeroCard
+import com.drawit.app.ui.components.StreakNoticeCard
+import com.drawit.app.ui.components.pressable
 import com.drawit.app.ui.formatCountdown
 import com.drawit.app.ui.formatDate
 import com.drawit.app.ui.formatTime
 import com.drawit.app.ui.greeting
 import com.drawit.app.ui.relativeDayLabel
-import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.delay
 
 private val prompts = listOf(
@@ -88,11 +94,15 @@ fun TodayScreen(
     onOpenAlbum: () -> Unit,
     onOpenInspiration: () -> Unit,
     onOpenReminder: () -> Unit,
+    onOpenStreak: () -> Unit,
+    onOpenSettings: () -> Unit,
     onOpenDrawing: (String) -> Unit
 ) {
     val context = LocalContext.current
     val drawings by viewModel.drawings.collectAsStateWithLifecycle()
     val settings by viewModel.settings.collectAsStateWithLifecycle()
+    val streak by viewModel.streak.collectAsStateWithLifecycle()
+    val notice by viewModel.streakNotice.collectAsStateWithLifecycle()
 
     // Drives the countdown so it stays honest without being a ticking clock.
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -103,9 +113,30 @@ fun TodayScreen(
         }
     }
 
+    // Coming back to the app is when a missed day gets paid for.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.settleStreak()
+                now = System.currentTimeMillis()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    // The freeze cue plays once, when the notice first appears.
+    LaunchedEffect(notice) {
+        notice?.let {
+            delay(420)
+            viewModel.playNotice(it)
+        }
+    }
+
     val nextReminder = remember(settings, now) { viewModel.nextReminderAt(settings) }
-    val streak = remember(drawings, now) { viewModel.streak(drawings) }
-    val drewToday = remember(drawings, now) { viewModel.drewToday(drawings) }
+    val drawnDays = remember(drawings) { viewModel.drawnDays(drawings) }
+    val drewToday = remember(streak, now) { viewModel.drewToday(streak) }
     val prompt = remember(now / 86_400_000L) {
         prompts[((now / 86_400_000L) % prompts.size).toInt()]
     }
@@ -134,14 +165,42 @@ fun TodayScreen(
                         painter = painterResource(R.drawable.logo_mark),
                         contentDescription = null,
                         contentScale = ContentScale.Fit,
-                        modifier = Modifier.width(46.dp)
+                        modifier = Modifier.width(40.dp)
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    CircleIconButton(
+                        iconRes = R.drawable.ic_sliders,
+                        contentDescription = "Settings",
+                        onClick = onOpenSettings
+                    )
+                }
+            }
+        }
+
+        notice?.let { pending ->
+            item {
+                Entrance(delayMillis = 90) {
+                    StreakNoticeCard(
+                        outcome = pending,
+                        onDismiss = { viewModel.clearStreakNotice() }
                     )
                 }
             }
         }
 
         item {
-            Entrance(delayMillis = 130) {
+            Entrance(delayMillis = 120) {
+                StreakHeroCard(
+                    state = streak,
+                    drawn = drawnDays,
+                    drewToday = drewToday,
+                    onClick = onOpenStreak
+                )
+            }
+        }
+
+        item {
+            Entrance(delayMillis = 180) {
                 ReminderHeroCard(
                     enabled = settings.enabled,
                     nextReminder = nextReminder,
@@ -155,13 +214,7 @@ fun TodayScreen(
         }
 
         item {
-            Entrance(delayMillis = 200) {
-                StatusCard(drewToday = drewToday, streak = streak, total = drawings.size)
-            }
-        }
-
-        item {
-            Entrance(delayMillis = 260) {
+            Entrance(delayMillis = 240) {
                 PaperCard(
                     modifier = Modifier.fillMaxWidth(),
                     fill = MaterialTheme.colorScheme.primaryContainer,
@@ -197,7 +250,7 @@ fun TodayScreen(
         }
 
         item {
-            Entrance(delayMillis = 320) {
+            Entrance(delayMillis = 300) {
                 PrimaryButton(
                     text = if (drewToday) "Add another drawing" else "Add today's drawing",
                     icon = painterResource(R.drawable.ic_camera),
@@ -209,12 +262,15 @@ fun TodayScreen(
 
         if (drawings.isNotEmpty()) {
             item {
-                Entrance(delayMillis = 380) {
+                Entrance(delayMillis = 360) {
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        SectionLabel("Recently drawn", Modifier.weight(1f))
+                        SectionLabel(
+                            if (drawings.size == 1) "1 drawing" else "${drawings.size} drawings",
+                            Modifier.weight(1f)
+                        )
                         Text(
                             text = "See all",
                             style = MaterialTheme.typography.labelMedium,
@@ -228,7 +284,7 @@ fun TodayScreen(
                 }
             }
             item {
-                Entrance(delayMillis = 420) {
+                Entrance(delayMillis = 400) {
                     RecentRow(
                         drawings = drawings.take(10),
                         fileFor = { viewModel.fileFor(it) },
@@ -282,7 +338,7 @@ private fun ReminderHeroCard(
                 if (isEnabled && target > 0L) {
                     Text(
                         text = timeLabel,
-                        style = MaterialTheme.typography.displayLarge,
+                        style = MaterialTheme.typography.displayMedium,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Spacer(Modifier.height(6.dp))
@@ -325,61 +381,6 @@ private fun ReminderHeroCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-        }
-    }
-}
-
-@Composable
-private fun StatusCard(drewToday: Boolean, streak: Int, total: Int) {
-    Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-        PaperCard(
-            modifier = Modifier.weight(1f),
-            contentPadding = PaddingValues(18.dp),
-            fill = if (drewToday) MaterialTheme.colorScheme.primary else null
-        ) {
-            val tint = if (drewToday) MaterialTheme.colorScheme.onPrimary
-            else MaterialTheme.colorScheme.onSurfaceVariant
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (drewToday) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_check),
-                        contentDescription = null,
-                        tint = tint,
-                        modifier = Modifier.size(17.dp)
-                    )
-                    Spacer(Modifier.width(7.dp))
-                }
-                SectionLabel(if (drewToday) "Done today" else "Streak", color = tint)
-            }
-            Spacer(Modifier.height(10.dp))
-            Text(
-                text = if (streak > 0) "$streak" else "—",
-                style = MaterialTheme.typography.displaySmall,
-                color = if (drewToday) MaterialTheme.colorScheme.onPrimary
-                else MaterialTheme.colorScheme.onSurface
-            )
-            Text(
-                text = if (streak == 1) "day in a row" else "days in a row",
-                style = MaterialTheme.typography.bodySmall,
-                color = tint
-            )
-        }
-        PaperCard(
-            modifier = Modifier.weight(1f),
-            contentPadding = PaddingValues(18.dp)
-        ) {
-            SectionLabel("In your album")
-            Spacer(Modifier.height(10.dp))
-            Text(
-                text = "$total",
-                style = MaterialTheme.typography.displaySmall,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Text(
-                text = if (total == 1) "drawing" else "drawings",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
         }
     }
 }

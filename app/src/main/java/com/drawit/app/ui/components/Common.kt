@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -223,6 +224,40 @@ fun EmptyState(
             Spacer(Modifier.height(24.dp))
             action()
         }
+    }
+}
+
+/** The app's switch: a sliding thumb rather than Material's default. */
+@Composable
+fun PaperSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit, modifier: Modifier = Modifier) {
+    val track by androidx.compose.animation.animateColorAsState(
+        targetValue = if (checked) MaterialTheme.colorScheme.primary
+        else MaterialTheme.colorScheme.surfaceVariant,
+        animationSpec = tween(240),
+        label = "switchTrack"
+    )
+    val thumbOffset by androidx.compose.animation.core.animateDpAsState(
+        targetValue = if (checked) 28.dp else 4.dp,
+        animationSpec = spring(dampingRatio = 0.66f, stiffness = Spring.StiffnessMedium),
+        label = "switchThumb"
+    )
+
+    Box(
+        modifier
+            .width(56.dp)
+            .height(32.dp)
+            .clip(CircleShape)
+            .background(track)
+            .pressable(scaleDown = 0.94f) { onCheckedChange(!checked) }
+    ) {
+        Box(
+            Modifier
+                .offset(x = thumbOffset)
+                .align(Alignment.CenterStart)
+                .size(24.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.surfaceContainerLowest)
+        )
     }
 }
 

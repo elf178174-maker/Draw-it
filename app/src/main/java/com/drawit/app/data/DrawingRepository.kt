@@ -37,6 +37,60 @@ class DrawingRepository(private val context: Context) {
 
     fun fileFor(drawing: Drawing): File = File(dir, drawing.fileName)
 
+    /** The folder holding the JPEGs, for backup and restore. */
+    val photoDirectory: File get() = dir
+
+    /** A consistent read of the index, for export. */
+    suspend fun snapshot(): List<Drawing> = withContext(Dispatchers.IO) {
+        writeLock.withLock { readIndex() }
+    }
+
+    /**
+     * Adds drawings from a backup, skipping any whose id is already here.
+     * [photoFor] supplies the JPEG for a drawing, or null if the archive lacked it.
+     * Returns how many were added and how many were skipped as duplicates.
+     */
+    suspend fun merge(
+        incoming: List<Drawing>,
+        photoFor: (Drawing) -> File?
+    ): Pair<Int, Int> = withContext(Dispatchers.IO) {
+        writeLock.withLock {
+            val current = readIndex()
+            val knownIds = current.map { it.id }.toMutableSet()
+            val knownFiles = current.map { it.fileName }.toMutableSet()
+            val added = mutableListOf<Drawing>()
+            var duplicates = 0
+
+            incoming.forEach { drawing ->
+                if (drawing.id in knownIds) {
+                    duplicates++
+                    return@forEach
+                }
+                val source = photoFor(drawing) ?: return@forEach
+                // Keep the original name unless it is already taken by another drawing.
+                val fileName = if (drawing.fileName in knownFiles) {
+                    "${drawing.id}.jpg"
+                } else {
+                    drawing.fileName
+                }
+                val target = File(dir, fileName)
+                val copied = runCatching { source.copyTo(target, overwrite = true) }.isSuccess
+                if (!copied) return@forEach
+
+                knownIds += drawing.id
+                knownFiles += fileName
+                added += drawing.copy(fileName = fileName)
+            }
+
+            if (added.isNotEmpty()) {
+                val updated = (current + added).sortedByDescending { it.createdAt }
+                writeIndex(updated)
+                _drawings.value = updated
+            }
+            added.size to duplicates
+        }
+    }
+
     /** Copies [source] into app storage, downscaled and rotation-corrected. */
     suspend fun add(source: Uri, title: String, note: String, createdAt: Long): Drawing? =
         withContext(Dispatchers.IO) {

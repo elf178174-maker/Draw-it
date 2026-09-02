@@ -13,6 +13,8 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.drawit.app.MainActivity
 import com.drawit.app.R
+import com.drawit.app.data.StreakRepository
+import java.time.LocalDate
 
 object Notifier {
 
@@ -52,6 +54,25 @@ object Notifier {
         ) == PackageManager.PERMISSION_GRANTED
     }
 
+    /** A nudge that knows what is at stake. */
+    private fun streakLine(state: com.drawit.app.data.StreakState): Pair<String, String> {
+        val drewToday = state.drewOn(LocalDate.now())
+        return when {
+            drewToday ->
+                "Already done today" to "Your streak is safe. Draw again if you feel like it."
+            state.current >= 2 && state.freezes == 0 ->
+                "Your ${state.current}-day streak is on the line" to
+                    "No freezes left. Draw today or it goes back to zero."
+            state.current >= 2 ->
+                "Keep your ${state.current}-day streak" to
+                    "One drawing keeps it alive. You have ${state.freezes} " +
+                    (if (state.freezes == 1) "freeze" else "freezes") + " spare, but why spend one?"
+            state.current == 1 ->
+                "Day two?" to "You drew yesterday. Do it again and a streak starts."
+            else -> lines.random()
+        }
+    }
+
     fun show(context: Context, preview: Boolean = false) {
         ensureChannel(context)
         if (!hasPermission(context)) return
@@ -59,7 +80,8 @@ object Notifier {
         val (title, body) = if (preview) {
             "Time to draw" to "This is what your reminder will look like."
         } else {
-            lines.random()
+            // Read-only: settling the streak is the app's job, not the alarm's.
+            streakLine(StreakRepository(context).state.value)
         }
 
         val openApp = PendingIntent.getActivity(

@@ -23,8 +23,26 @@ took), give it a name and an optional description, and it's saved with the date
 and time. The album is a searchable grid; tapping a drawing opens it full size
 with its details, which you can edit or delete later.
 
-**Today** — the home screen shows the next reminder with a live countdown, a
-daily drawing prompt, your streak, and the drawings you added most recently.
+**Streak** — every day you add a drawing, the streak grows, and the save turns
+into a small celebration: rings push out, paper confetti scatters, the number
+rolls up, a warm chime plays and the phone buzzes in a pattern that builds as
+the number lands. Milestones (3, 7, 14, 30, 50, 100, a year…) get a longer
+version of all of it. Tap the streak card for the full picture — this week,
+your longest run, the last ten weeks as a grid, and every milestone.
+
+**Streak freezes** — you earn one freeze a week, up to three. Miss a day and a
+freeze is spent for you automatically: the streak holds, it just doesn't grow
+that day, and the app tells you what happened next time you open it. Run out of
+freezes and a missed day ends the run, so they still matter.
+
+**Backup** — Settings can export your whole album to a single `.zip`: every
+photo, its name, its description, its date, and your streak. Import reads one
+back on a new phone. Drawings you already have are skipped, so importing the
+same file twice is safe.
+
+**Today** — the home screen shows your streak and week at a glance, the next
+reminder with a live countdown, a daily drawing prompt, and the drawings you
+added most recently.
 
 ## Getting the APK
 
@@ -46,6 +64,8 @@ application id, so it can sit next to the release build if you want to compare.
 - Notification permission, which the app asks for on first launch. Without it
   the reminder has no way to reach you; the Reminder screen will tell you and
   link straight to the setting.
+- Sound and vibration for the streak celebration are on by default and can be
+  turned off independently in Settings.
 - On Android 12 and newer, "alarms & reminders" permission makes the reminder
   land exactly on time. Without it Android may shift the reminder by a few
   minutes to save battery — the app still works, and the Reminder screen offers
@@ -88,8 +108,15 @@ Requires JDK 17 and the Android SDK (compile SDK 34).
 - Kotlin and Jetpack Compose, Material 3 with a custom warm paper-and-ink
   palette built around the logo orange.
 - Drawings are JPEGs in the app's private storage plus a small JSON index;
-  reminder preferences live in `SharedPreferences`. No database, no network
-  layer.
+  reminder preferences, the streak and its freezes live in `SharedPreferences`.
+  No database, no network layer.
+- The streak is settled lazily: opening the app works out how many days were
+  missed, spends that many freezes if it can, and otherwise resets. Days are
+  local epoch days, so the streak turns over at your midnight, not UTC.
+- Backups are a plain `.zip` — `manifest.json` plus a `photos/` folder — so the
+  contents stay readable without the app.
+- The celebration sounds are synthesised mallet tones generated for this
+  project, not sampled audio; see `tools/make_sounds.py`.
 - `AlarmManager` drives the reminder as a one-shot alarm that re-arms after
   every firing, so day-of-week schedules stay correct across daylight saving.
 - `BootReceiver` restores the alarm after a reboot, an app update, or a clock
@@ -97,10 +124,12 @@ Requires JDK 17 and the Android SDK (compile SDK 34).
 
 ```
 app/src/main/java/com/drawit/app/
-├── data/         drawings + reminder settings
+├── data/         drawings, reminder settings, streak, backup zip
+├── feedback/     the celebration's sound and haptics
 ├── reminder/     alarm scheduling, notifications, boot restore
 └── ui/
-    ├── components/   buttons, cards, fields, bottom bar
-    ├── screens/      today, inspiration, album, detail, add, reminder
+    ├── components/   buttons, cards, fields, bottom bar, streak celebration
+    ├── screens/      today, inspiration, album, detail, add, reminder,
+    │                 streak, settings
     └── theme/        colour, type, shapes
 ```

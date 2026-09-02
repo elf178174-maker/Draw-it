@@ -38,6 +38,8 @@ import com.drawit.app.ui.screens.AlbumScreen
 import com.drawit.app.ui.screens.DrawingDetailScreen
 import com.drawit.app.ui.screens.InspirationScreen
 import com.drawit.app.ui.screens.ReminderScreen
+import com.drawit.app.ui.screens.SettingsScreen
+import com.drawit.app.ui.screens.StreakScreen
 import com.drawit.app.ui.screens.TodayScreen
 
 object Routes {
@@ -47,6 +49,8 @@ object Routes {
     const val REMINDER = "reminder"
     const val ADD = "add"
     const val DETAIL = "detail"
+    const val STREAK = "streak"
+    const val SETTINGS = "settings"
 }
 
 private val navItems = listOf(
@@ -98,6 +102,8 @@ fun DrawItRoot(
                     onOpenAlbum = { navController.navigate(Routes.ALBUM) { launchSingleTop = true } },
                     onOpenInspiration = { navController.navigate(Routes.INSPIRATION) { launchSingleTop = true } },
                     onOpenReminder = { navController.navigate(Routes.REMINDER) { launchSingleTop = true } },
+                    onOpenStreak = { navController.navigate(Routes.STREAK) },
+                    onOpenSettings = { navController.navigate(Routes.SETTINGS) },
                     onOpenDrawing = { navController.navigate("${Routes.DETAIL}/$it") }
                 )
             }
@@ -127,6 +133,28 @@ fun DrawItRoot(
                         navController.navigate(Routes.ALBUM) { launchSingleTop = true }
                     }
                 )
+            }
+            composable(
+                route = Routes.STREAK,
+                enterTransition = {
+                    slideInHorizontally(tween(340, easing = FastOutSlowInEasing)) { it / 6 } + fadeIn(tween(240))
+                },
+                popExitTransition = {
+                    slideOutHorizontally(tween(300, easing = FastOutSlowInEasing)) { it / 6 } + fadeOut(tween(200))
+                }
+            ) {
+                StreakScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
+            }
+            composable(
+                route = Routes.SETTINGS,
+                enterTransition = {
+                    slideInHorizontally(tween(340, easing = FastOutSlowInEasing)) { it / 6 } + fadeIn(tween(240))
+                },
+                popExitTransition = {
+                    slideOutHorizontally(tween(300, easing = FastOutSlowInEasing)) { it / 6 } + fadeOut(tween(200))
+                }
+            ) {
+                SettingsScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
             }
             composable(
                 route = "${Routes.DETAIL}/{id}",

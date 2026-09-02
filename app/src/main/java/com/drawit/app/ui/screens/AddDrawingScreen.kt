@@ -69,6 +69,7 @@ import com.drawit.app.ui.components.Entrance
 import com.drawit.app.ui.components.LabelledField
 import com.drawit.app.ui.components.PrimaryButton
 import com.drawit.app.ui.components.SectionLabel
+import com.drawit.app.ui.components.StreakCelebration
 import com.drawit.app.ui.components.pressable
 import kotlinx.coroutines.delay
 import java.io.File
@@ -81,6 +82,7 @@ fun AddDrawingScreen(
 ) {
     val context = LocalContext.current
     val saving by viewModel.saving.collectAsStateWithLifecycle()
+    val celebration by viewModel.celebration.collectAsStateWithLifecycle()
 
     var photo by remember { mutableStateOf<Uri?>(null) }
     var title by remember { mutableStateOf("") }
@@ -257,7 +259,22 @@ fun AddDrawingScreen(
         }
 
         AnimatedVisibility(visible = saved, enter = fadeIn(tween(220)), exit = fadeOut(tween(200))) {
-            SavedOverlay(onDone = onSaved)
+            val streak = celebration
+            if (streak != null) {
+                // The streak grew, so the save is celebrated rather than just confirmed.
+                StreakCelebration(
+                    streak = streak.state.current,
+                    milestone = streak.milestone,
+                    isRecord = streak.state.current == streak.state.best,
+                    onPlayFeedback = { viewModel.playCelebration(streak) },
+                    onDone = {
+                        viewModel.clearCelebration()
+                        onSaved()
+                    }
+                )
+            } else {
+                SavedOverlay(onDone = onSaved)
+            }
         }
     }
 }

@@ -79,6 +79,7 @@ import com.drawit.app.data.ReminderSettings
 import com.drawit.app.ui.components.Entrance
 import com.drawit.app.ui.components.OutlineButton
 import com.drawit.app.ui.components.PaperCard
+import com.drawit.app.ui.components.PaperSwitch
 import com.drawit.app.ui.components.PrimaryButton
 import com.drawit.app.ui.components.SectionLabel
 import com.drawit.app.ui.components.pressable
@@ -470,39 +471,6 @@ private fun DayChip(label: String, selected: Boolean, modifier: Modifier, onClic
             style = MaterialTheme.typography.labelLarge,
             color = foreground,
             textAlign = TextAlign.Center
-        )
-    }
-}
-
-@Composable
-private fun PaperSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
-    val track by animateColorAsState(
-        targetValue = if (checked) MaterialTheme.colorScheme.primary
-        else MaterialTheme.colorScheme.surfaceVariant,
-        animationSpec = tween(240),
-        label = "switchTrack"
-    )
-    val thumbOffset by animateDpAsState(
-        targetValue = if (checked) 28.dp else 4.dp,
-        animationSpec = spring(dampingRatio = 0.66f, stiffness = Spring.StiffnessMedium),
-        label = "switchThumb"
-    )
-
-    Box(
-        Modifier
-            .width(56.dp)
-            .height(32.dp)
-            .clip(CircleShape)
-            .background(track)
-            .pressable(scaleDown = 0.94f) { onCheckedChange(!checked) }
-    ) {
-        Box(
-            Modifier
-                .offset(x = thumbOffset)
-                .align(Alignment.CenterStart)
-                .size(24.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.surfaceContainerLowest)
         )
     }
 }
