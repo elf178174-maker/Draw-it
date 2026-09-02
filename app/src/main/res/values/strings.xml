@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Draw it</string>
+    <string name="reminder_channel_name">Drawing reminders</string>
+    <string name="reminder_channel_description">Your daily nudge to sit down and draw.</string>
+</resources>
