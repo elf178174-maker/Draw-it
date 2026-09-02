@@ -194,37 +194,45 @@ fun InspirationScreen() {
                     .background(MaterialTheme.colorScheme.surfaceContainer)
             )
 
-            AnimatedVisibility(
-                visible = progress < 1f,
-                enter = fadeIn(tween(120)),
-                exit = fadeOut(tween(320)),
+            LoadingBar(
+                progress = progress,
                 modifier = Modifier.align(Alignment.TopStart)
-            ) {
-                LoadingBar(progress = progress)
-            }
+            )
         }
     }
 }
 
+/**
+ * Lives in its own composable so that `AnimatedVisibility` resolves against no
+ * implicit layout scope. Called inline inside the Box it would bind to the
+ * enclosing Column's receiver instead, which the compiler rejects.
+ */
 @Composable
-private fun LoadingBar(progress: Float) {
+private fun LoadingBar(progress: Float, modifier: Modifier = Modifier) {
     val animated by animateFloatAsState(
         targetValue = progress.coerceIn(0f, 1f),
         animationSpec = tween(240),
         label = "webProgress"
     )
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .height(3.dp)
-            .background(MaterialTheme.colorScheme.surfaceVariant)
+    AnimatedVisibility(
+        visible = progress < 1f,
+        enter = fadeIn(tween(120)),
+        exit = fadeOut(tween(320)),
+        modifier = modifier
     ) {
         Box(
             Modifier
-                .fillMaxWidth(animated)
+                .fillMaxWidth()
                 .height(3.dp)
-                .background(MaterialTheme.colorScheme.primary)
-        )
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+        ) {
+            Box(
+                Modifier
+                    .fillMaxWidth(animated)
+                    .height(3.dp)
+                    .background(MaterialTheme.colorScheme.primary)
+            )
+        }
     }
 }
 
