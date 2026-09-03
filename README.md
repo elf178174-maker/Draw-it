@@ -66,10 +66,16 @@ application id, so it can sit next to the release build if you want to compare.
   link straight to the setting.
 - Sound and vibration for the streak celebration are on by default and can be
   turned off independently in Settings.
-- On Android 12 and newer, "alarms & reminders" permission makes the reminder
-  land exactly on time. Without it Android may shift the reminder by a few
-  minutes to save battery — the app still works, and the Reminder screen offers
-  to fix it.
+- Exact alarms. On Android 13 and newer this is granted on install. On Android
+  12 it is a setting, and the Reminder screen links straight to it. Without it
+  Android parks the reminder while the phone is idle and only delivers it when
+  something wakes the app, which is not a reminder.
+- Because the reminder uses an alarm-clock alarm (the only kind Doze cannot
+  defer), an alarm icon sits in the status bar while one is scheduled.
+- If your phone is aggressive about battery — Samsung, Xiaomi, Oppo and others
+  are — the Reminder screen offers to exempt the app. Use **Test the real
+  alarm** there to confirm: it arms a genuine alarm 30 seconds out, so you can
+  close the app and lock the phone to check it really arrives.
 
 ## Signing
 

@@ -4,9 +4,20 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <!--
+      USE_EXACT_ALARM is granted on install and is meant for apps whose point is
+      a scheduled reminder, which is this app's whole point. Without it, Android
+      13+ leaves exact alarms off until the user digs through settings, and the
+      reminder gets deferred by Doze until the app is next opened.
+      SCHEDULE_EXACT_ALARM covers Android 12, where USE_EXACT_ALARM does not exist.
+    -->
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <uses-permission
+        android:name="android.permission.SCHEDULE_EXACT_ALARM"
+        android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <uses-feature android:name="android.hardware.camera.any" android:required="false" />
 

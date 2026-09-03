@@ -131,6 +131,18 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun canScheduleExact(): Boolean = ReminderScheduler.canScheduleExact(app)
 
+    /** False when Android's battery saver may stop delivering alarms in the background. */
+    fun isBatteryExempt(): Boolean = ReminderScheduler.isBatteryExempt(app)
+
+    /**
+     * Arms a real alarm [seconds] from now through the same AlarmManager path the
+     * reminder uses, so it can be verified with the app closed and the screen off.
+     * The receiver puts the normal schedule back afterwards.
+     */
+    fun scheduleTestAlarm(seconds: Long = 30) {
+        ReminderScheduler.armAt(app, System.currentTimeMillis() + seconds * 1000)
+    }
+
     fun hasNotificationPermission(): Boolean = Notifier.hasPermission(app)
 
     fun nextReminderAt(settings: ReminderSettings): Long? =

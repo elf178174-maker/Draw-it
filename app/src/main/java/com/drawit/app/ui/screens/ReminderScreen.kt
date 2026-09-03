@@ -1,6 +1,7 @@
 package com.drawit.app.ui.screens
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -97,6 +98,8 @@ fun ReminderScreen(viewModel: AppViewModel) {
     val resumeTick = rememberResumeTick()
     val notificationsAllowed = remember(resumeTick) { viewModel.hasNotificationPermission() }
     val exactAllowed = remember(resumeTick) { viewModel.canScheduleExact() }
+    val batteryExempt = remember(resumeTick) { viewModel.isBatteryExempt() }
+    var testArmed by remember { mutableStateOf(false) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -277,21 +280,76 @@ fun ReminderScreen(viewModel: AppViewModel) {
         if (notificationsAllowed && !exactAllowed) {
             Entrance(delayMillis = 220) {
                 NoticeCard(
-                    title = "Reminder may run a few minutes late",
-                    body = "Android is allowed to delay this reminder to save battery. Grant exact alarms and it will land right on time.",
-                    actionLabel = "Allow exact timing",
+                    title = "Reminder will arrive late",
+                    body = "Without permission for exact alarms, Android parks the reminder " +
+                        "while the phone is idle and only delivers it when something wakes " +
+                        "the app up. Turn this on and it lands on the minute.",
+                    actionLabel = "Allow exact alarms",
                     onAction = { openExactAlarmSettings(context) }
                 )
             }
             Spacer(Modifier.height(18.dp))
         }
 
+        if (notificationsAllowed && !batteryExempt) {
+            Entrance(delayMillis = 230) {
+                NoticeCard(
+                    title = "Battery saver can silence this",
+                    body = "Some phones stop waking apps in the background, which is the " +
+                        "usual reason a reminder never shows up. Letting Draw it run " +
+                        "unrestricted costs almost nothing — it wakes once a day.",
+                    actionLabel = "Let it run",
+                    onAction = { requestBatteryExemption(context) },
+                    secondaryLabel = "Open settings",
+                    onSecondary = { openBatterySettings(context) }
+                )
+            }
+            Spacer(Modifier.height(18.dp))
+        }
+
         Entrance(delayMillis = 260) {
-            OutlineButton(
-                text = "Send a test notification",
-                icon = painterResource(R.drawable.ic_bell),
-                modifier = Modifier.fillMaxWidth()
-            ) { viewModel.sendTestNotification() }
+            PaperCard(
+                modifier = Modifier.fillMaxWidth(),
+                contentPadding = PaddingValues(20.dp)
+            ) {
+                SectionLabel("Check it works")
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    text = "The real test is whether a reminder arrives while the app is " +
+                        "closed. This arms a genuine alarm 30 seconds from now — start it, " +
+                        "leave the app and lock your phone. Your normal schedule is put " +
+                        "back straight afterwards.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(16.dp))
+                PrimaryButton(
+                    text = if (testArmed) "Armed — now close the app" else "Test the real alarm",
+                    icon = painterResource(R.drawable.ic_clock),
+                    enabled = !testArmed,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    viewModel.scheduleTestAlarm(30)
+                    testArmed = true
+                }
+                Spacer(Modifier.height(12.dp))
+                OutlineButton(
+                    text = "Just show me the notification",
+                    icon = painterResource(R.drawable.ic_bell),
+                    modifier = Modifier.fillMaxWidth()
+                ) { viewModel.sendTestNotification() }
+                Spacer(Modifier.height(14.dp))
+                Text(
+                    text = if (exactAllowed) {
+                        "Alarms are exact, so the reminder is exempt from battery dozing. " +
+                            "That is why an alarm icon sits in your status bar."
+                    } else {
+                        "Alarms are currently inexact and may be delayed."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
 
         Spacer(Modifier.height(140.dp))
@@ -544,6 +602,22 @@ private fun openExactAlarmSettings(context: Context) {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
     val intent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM)
         .setData(Uri.fromParts("package", context.packageName, null))
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    runCatching { context.startActivity(intent) }.onFailure { openAppSettings(context) }
+}
+
+@SuppressLint("BatteryLife")
+private fun requestBatteryExemption(context: Context) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
+    val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+        .setData(Uri.fromParts("package", context.packageName, null))
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    runCatching { context.startActivity(intent) }.onFailure { openBatterySettings(context) }
+}
+
+private fun openBatterySettings(context: Context) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
+    val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     runCatching { context.startActivity(intent) }.onFailure { openAppSettings(context) }
 }
