@@ -127,7 +127,7 @@ class BackupManager(
 
                 // Ink is merged source by source, so importing the same backup
                 // (or a backup of a backup) never counts anything twice.
-                val ink = progress.importInk(parsed)
+                val ink = progress.importInk(parsed, alreadyHad = duplicates == parsed.drawings.size)
 
                 // Owned pieces always merge; the outfit and name only land on an
                 // avatar nobody has dressed yet.
