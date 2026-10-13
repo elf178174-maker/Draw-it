@@ -8,11 +8,14 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.drawit.app.ui.DrawItRoot
+import com.drawit.app.ui.components.LocalFeedback
+import com.drawit.app.ui.components.ProvideArtClock
 import com.drawit.app.ui.theme.DrawItTheme
 
 class MainActivity : ComponentActivity() {
@@ -34,11 +37,15 @@ class MainActivity : ComponentActivity() {
         setContent {
             DrawItTheme {
                 val vm: AppViewModel = viewModel()
-                DrawItRoot(
-                    viewModel = vm,
-                    openAddOnStart = pendingAddRequest,
-                    onAddRequestHandled = { pendingAddRequest = false }
-                )
+                CompositionLocalProvider(LocalFeedback provides vm.feedback) {
+                    ProvideArtClock {
+                        DrawItRoot(
+                            viewModel = vm,
+                            openAddOnStart = pendingAddRequest,
+                            onAddRequestHandled = { pendingAddRequest = false }
+                        )
+                    }
+                }
             }
         }
     }

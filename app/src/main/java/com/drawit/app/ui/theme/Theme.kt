@@ -8,76 +8,49 @@ import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 
-private val LightColors = lightColorScheme(
-    primary = BrandOrange,
-    onPrimary = Color.White,
-    primaryContainer = TintLight,
-    onPrimaryContainer = OnTintLight,
-    secondary = InkMutedLight,
-    onSecondary = Color.White,
-    secondaryContainer = PaperSunken,
-    onSecondaryContainer = InkLight,
-    tertiary = BrandOrangeSoft,
-    onTertiary = Color.White,
-    background = PaperLight,
-    onBackground = InkLight,
-    surface = PaperLight,
-    onSurface = InkLight,
-    surfaceVariant = PaperSunken,
-    onSurfaceVariant = InkMutedLight,
-    surfaceContainer = PaperRaised,
-    surfaceContainerHigh = PaperRaised,
-    surfaceContainerLow = PaperRaised,
-    surfaceContainerLowest = Color.White,
-    surfaceContainerHighest = PaperSunken,
-    outline = LineLight,
-    outlineVariant = LineLight,
-    error = Color(0xFFB3261E),
-    onError = Color.White,
-    scrim = Color(0x99120E0A)
-)
+val LocalColors = staticCompositionLocalOf { LightPalette }
+val LocalType = staticCompositionLocalOf { drawItType() }
 
-private val DarkColors = darkColorScheme(
-    primary = BrandOrangeSoft,
-    onPrimary = Color(0xFF3D1200),
-    primaryContainer = TintDark,
-    onPrimaryContainer = OnTintDark,
-    secondary = InkMutedDark,
-    onSecondary = Color(0xFF201A14),
-    secondaryContainer = PaperSunkenDark,
-    onSecondaryContainer = InkDark,
-    tertiary = BrandOrange,
-    onTertiary = Color.White,
-    background = PaperDark,
-    onBackground = InkDark,
-    surface = PaperDark,
-    onSurface = InkDark,
-    surfaceVariant = PaperSunkenDark,
-    onSurfaceVariant = InkMutedDark,
-    surfaceContainer = PaperRaisedDark,
-    surfaceContainerHigh = PaperRaisedDark,
-    surfaceContainerLow = PaperRaisedDark,
-    surfaceContainerLowest = Color(0xFF100D0A),
-    surfaceContainerHighest = PaperSunkenDark,
-    outline = LineDark,
-    outlineVariant = LineDark,
-    error = Color(0xFFF2B8B5),
-    onError = Color(0xFF601410),
-    scrim = Color(0xAA000000)
-)
+/** Shorthand used across the UI: `DI.colors.brand`, `DI.type.title`. */
+object DI {
+    val colors: DrawItColors
+        @Composable get() = LocalColors.current
+    val type: DrawItType
+        @Composable get() = LocalType.current
+}
+
+private fun materialColors(c: DrawItColors) = if (c.isDark) {
+    darkColorScheme(
+        primary = c.brand, onPrimary = c.onBrand, primaryContainer = c.brandSoft, onPrimaryContainer = c.text,
+        secondary = c.ink, onSecondary = Color.White, tertiary = c.flame,
+        background = c.background, onBackground = c.text, surface = c.surface, onSurface = c.text,
+        surfaceVariant = c.sunken, onSurfaceVariant = c.textMuted, outline = c.line, outlineVariant = c.line,
+        error = c.red, onError = Color.White, scrim = c.scrim
+    )
+} else {
+    lightColorScheme(
+        primary = c.brand, onPrimary = c.onBrand, primaryContainer = c.brandSoft, onPrimaryContainer = c.text,
+        secondary = c.ink, onSecondary = Color.White, tertiary = c.flame,
+        background = c.background, onBackground = c.text, surface = c.surface, onSurface = c.text,
+        surfaceVariant = c.sunken, onSurfaceVariant = c.textMuted, outline = c.line, outlineVariant = c.line,
+        error = c.red, onError = Color.White, scrim = c.scrim
+    )
+}
 
 val DrawItShapes = Shapes(
     extraSmall = RoundedCornerShape(8.dp),
     small = RoundedCornerShape(12.dp),
-    medium = RoundedCornerShape(18.dp),
-    large = RoundedCornerShape(26.dp),
-    extraLarge = RoundedCornerShape(34.dp)
+    medium = RoundedCornerShape(16.dp),
+    large = RoundedCornerShape(22.dp),
+    extraLarge = RoundedCornerShape(28.dp)
 )
 
 @Composable
@@ -85,7 +58,8 @@ fun DrawItTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit
 ) {
-    val colors = if (darkTheme) DarkColors else LightColors
+    val colors = if (darkTheme) DarkPalette else LightPalette
+    val type = drawItType()
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
@@ -96,10 +70,12 @@ fun DrawItTheme(
             }
         }
     }
-    MaterialTheme(
-        colorScheme = colors,
-        typography = DrawItTypography,
-        shapes = DrawItShapes,
-        content = content
-    )
+    CompositionLocalProvider(LocalColors provides colors, LocalType provides type) {
+        MaterialTheme(
+            colorScheme = materialColors(colors),
+            typography = materialTypography(type),
+            shapes = DrawItShapes,
+            content = content
+        )
+    }
 }

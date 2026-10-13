@@ -15,8 +15,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -27,8 +27,9 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
+import com.drawit.app.ui.theme.DI
 
-/** Label + soft-outlined text field, focus-aware. */
+/** Label above a chunky, focus-aware text field. */
 @Composable
 fun LabelledField(
     label: String,
@@ -37,53 +38,57 @@ fun LabelledField(
     modifier: Modifier = Modifier,
     placeholder: String = "",
     minLines: Int = 1,
-    imeAction: ImeAction = ImeAction.Default
+    imeAction: ImeAction = ImeAction.Default,
+    onImeAction: (() -> Unit)? = null
+) {
+    Column(modifier) {
+        if (label.isNotEmpty()) {
+            Eyebrow(label)
+            Spacer(Modifier.height(8.dp))
+        }
+        ChunkyTextField(value, onValueChange, placeholder = placeholder, minLines = minLines, imeAction = imeAction, onImeAction = onImeAction)
+    }
+}
+
+@Composable
+fun ChunkyTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    placeholder: String = "",
+    minLines: Int = 1,
+    imeAction: ImeAction = ImeAction.Default,
+    onImeAction: (() -> Unit)? = null
 ) {
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
-    val shape = RoundedCornerShape(18.dp)
+    val shape = RoundedCornerShape(16.dp)
     val borderColor by animateColorAsState(
-        targetValue = if (focused) MaterialTheme.colorScheme.primary
-        else MaterialTheme.colorScheme.outline,
-        animationSpec = tween(220),
+        if (focused) DI.colors.ice else DI.colors.line,
+        tween(180),
         label = "fieldBorder"
     )
-
-    Column(modifier) {
-        SectionLabel(label)
-        Spacer(Modifier.height(8.dp))
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .clip(shape)
-                .background(MaterialTheme.colorScheme.surfaceContainer)
-                .border(1.dp, borderColor, shape)
-                .padding(horizontal = 16.dp, vertical = 14.dp)
-        ) {
-            if (value.isEmpty()) {
-                Text(
-                    text = placeholder,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            BasicTextField(
-                value = value,
-                onValueChange = onValueChange,
-                interactionSource = interaction,
-                singleLine = minLines == 1,
-                textStyle = MaterialTheme.typography.bodyLarge.copy(
-                    color = MaterialTheme.colorScheme.onSurface
-                ),
-                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                keyboardOptions = KeyboardOptions(
-                    capitalization = KeyboardCapitalization.Sentences,
-                    imeAction = imeAction
-                ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = if (minLines > 1) (minLines * 24).dp else 0.dp)
-            )
+    Box(
+        modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(if (focused) DI.colors.surface else DI.colors.sunken)
+            .border(2.dp, borderColor, shape)
+            .padding(horizontal = 16.dp, vertical = 14.dp)
+    ) {
+        if (value.isEmpty()) {
+            Text(placeholder, style = DI.type.body, color = DI.colors.textFaint)
         }
+        BasicTextField(
+            value = value,
+            onValueChange = onValueChange,
+            interactionSource = interaction,
+            singleLine = minLines == 1,
+            textStyle = DI.type.bodyStrong.copy(color = DI.colors.text),
+            cursorBrush = SolidColor(DI.colors.ice),
+            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = imeAction),
+            keyboardActions = KeyboardActions(onAny = { onImeAction?.invoke() }),
+            modifier = Modifier.fillMaxWidth().heightIn(min = if (minLines > 1) (minLines * 22).dp else 0.dp)
+        )
     }
 }

@@ -2,37 +2,25 @@ package com.drawit.app.ui.screens
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -41,30 +29,28 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.drawit.app.AppViewModel
 import com.drawit.app.R
+import com.drawit.app.ui.components.ChunkyButton
+import com.drawit.app.ui.components.ChunkyIconButton
+import com.drawit.app.ui.components.Chunks
 import com.drawit.app.ui.components.Entrance
+import com.drawit.app.ui.components.Eyebrow
 import com.drawit.app.ui.components.LabelledField
-import com.drawit.app.ui.components.OutlineButton
-import com.drawit.app.ui.components.PrimaryButton
-import com.drawit.app.ui.components.SectionLabel
-import com.drawit.app.ui.components.pressable
+import com.drawit.app.ui.components.ScreenHeader
+import com.drawit.app.ui.components.chunky
 import com.drawit.app.ui.formatDate
 import com.drawit.app.ui.formatTime
-import androidx.compose.ui.platform.LocalContext
+import com.drawit.app.ui.theme.DI
 
 @Composable
-fun DrawingDetailScreen(
-    viewModel: AppViewModel,
-    drawingId: String,
-    onBack: () -> Unit
-) {
+fun DrawingDetailScreen(viewModel: AppViewModel, drawingId: String, onBack: () -> Unit) {
     val context = LocalContext.current
     val drawings by viewModel.drawings.collectAsStateWithLifecycle()
     val drawing = drawings.firstOrNull { it.id == drawingId }
@@ -78,11 +64,7 @@ fun DrawingDetailScreen(
     if (drawing == null) {
         // The drawing was deleted while this screen was open.
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text(
-                text = "This drawing is gone.",
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Text("This drawing is gone.", style = DI.type.bodyStrong, color = DI.colors.textMuted)
         }
         return
     }
@@ -90,212 +72,103 @@ fun DrawingDetailScreen(
     BackHandler(enabled = zoomed) { zoomed = false }
 
     Box(Modifier.fillMaxSize()) {
-        Column(
-            Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 22.dp)
-                .padding(bottom = 40.dp)
-        ) {
-            Spacer(Modifier.statusBarsPadding().height(16.dp))
-
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                CircleIconButton(
-                    iconRes = R.drawable.ic_arrow_left,
-                    contentDescription = "Back",
-                    onClick = onBack
-                )
-                Spacer(Modifier.weight(1f))
-                Text(
-                    text = if (editing) "Cancel" else "Edit",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier
-                        .clip(CircleShape)
-                        .pressable {
-                            if (editing) {
-                                title = drawing.title
-                                note = drawing.note
-                            }
-                            editing = !editing
-                        }
-                        .padding(horizontal = 12.dp, vertical = 8.dp)
+        Column(Modifier.fillMaxSize()) {
+            ScreenHeader(if (editing) "Edit drawing" else "Drawing", onBack) {
+                ChunkyIconButton(
+                    painterResource(if (editing) R.drawable.ic_close else R.drawable.ic_pencil),
+                    if (editing) "Cancel" else "Edit",
+                    onClick = {
+                        if (editing) { title = drawing.title; note = drawing.note }
+                        editing = !editing
+                    }
                 )
             }
-
-            Spacer(Modifier.height(18.dp))
-
-            Entrance(delayMillis = 40) {
-                AsyncImage(
-                    model = viewModel.fileFor(drawing),
-                    contentDescription = drawing.title,
-                    contentScale = ContentScale.FillWidth,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(24.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(24.dp))
-                        .pressable(scaleDown = 0.985f) { zoomed = true }
-                )
-            }
-
-            Spacer(Modifier.height(22.dp))
-
-            Entrance(delayMillis = 110) {
-                Column {
-                    SectionLabel("${formatDate(drawing.createdAt)} · ${formatTime(context, drawing.createdAt)}")
-                    Spacer(Modifier.height(10.dp))
-
-                    if (editing) {
-                        LabelledField(
-                            label = "Name",
-                            value = title,
-                            placeholder = "Give it a name",
-                            onValueChange = { title = it }
+            Column(
+                Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)
+            ) {
+                Entrance(delayMillis = 30) {
+                    Box(Modifier.chunky(Chunks.plain(), corner = 22.dp, onClick = { zoomed = true }).padding(6.dp)) {
+                        AsyncImage(
+                            model = viewModel.fileFor(drawing),
+                            contentDescription = drawing.title,
+                            contentScale = ContentScale.FillWidth,
+                            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(DI.colors.sunken)
                         )
-                        Spacer(Modifier.height(14.dp))
-                        LabelledField(
-                            label = "Description",
-                            value = note,
-                            placeholder = "What were you working on?",
-                            minLines = 4,
-                            onValueChange = { note = it }
-                        )
-                        Spacer(Modifier.height(20.dp))
-                        PrimaryButton(
-                            text = "Save changes",
-                            icon = painterResource(R.drawable.ic_check),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            viewModel.update(drawing.id, title, note)
-                            editing = false
-                        }
-                    } else {
-                        Text(
-                            text = drawing.title,
-                            style = MaterialTheme.typography.displaySmall,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        if (drawing.note.isNotBlank()) {
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+                Entrance(delayMillis = 90) {
+                    Column {
+                        Eyebrow("${formatDate(drawing.createdAt)} · ${formatTime(context, drawing.createdAt)}")
+                        Spacer(Modifier.height(8.dp))
+                        if (editing) {
+                            LabelledField("Name", title, { title = it }, placeholder = "Give it a name")
                             Spacer(Modifier.height(14.dp))
-                            Text(
-                                text = drawing.note,
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            LabelledField("Description", note, { note = it }, placeholder = "What were you working on?", minLines = 4)
+                            Spacer(Modifier.height(18.dp))
+                            ChunkyButton(
+                                "Save changes",
+                                onClick = { viewModel.update(drawing.id, title, note); editing = false },
+                                icon = painterResource(R.drawable.ic_check),
+                                chunk = Chunks.green(),
+                                modifier = Modifier.fillMaxWidth()
                             )
+                        } else {
+                            Text(drawing.title, style = DI.type.display, color = DI.colors.text)
+                            if (drawing.note.isNotBlank()) {
+                                Spacer(Modifier.height(10.dp))
+                                Text(drawing.note, style = DI.type.body, color = DI.colors.textMuted)
+                            }
                         }
                     }
                 }
-            }
-
-            if (!editing) {
-                Spacer(Modifier.height(28.dp))
-                Entrance(delayMillis = 180) {
-                    OutlineButton(
-                        text = "Delete this drawing",
+                if (!editing) {
+                    Spacer(Modifier.height(24.dp))
+                    ChunkyButton(
+                        "Delete this drawing",
+                        onClick = { confirmDelete = true },
                         icon = painterResource(R.drawable.ic_trash),
+                        chunk = Chunks.plain(),
                         modifier = Modifier.fillMaxWidth()
-                    ) { confirmDelete = true }
+                    )
                 }
+                Spacer(Modifier.navigationBarsPadding().height(24.dp))
             }
-
-            Spacer(Modifier.navigationBarsPadding().height(24.dp))
         }
 
-        AnimatedVisibility(
-            visible = zoomed,
-            enter = fadeIn(tween(220)),
-            exit = fadeOut(tween(200))
-        ) {
-            ZoomOverlay(
-                model = viewModel.fileFor(drawing),
-                description = drawing.title,
-                onDismiss = { zoomed = false }
-            )
+        AnimatedVisibility(visible = zoomed, enter = fadeIn(tween(200)), exit = fadeOut(tween(180))) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(DI.colors.scrim)
+                    .clickable(remember { MutableInteractionSource() }, null) { zoomed = false },
+                contentAlignment = Alignment.Center
+            ) {
+                AsyncImage(
+                    model = viewModel.fileFor(drawing),
+                    contentDescription = drawing.title,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxWidth().padding(12.dp)
+                )
+            }
         }
     }
 
     if (confirmDelete) {
         AlertDialog(
             onDismissRequest = { confirmDelete = false },
-            title = { Text("Delete this drawing?", style = MaterialTheme.typography.titleLarge) },
-            text = {
-                Text(
-                    "The photo and its notes will be removed from your album. This cannot be undone.",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-            },
+            title = { Text("Delete this drawing?", style = DI.type.headline) },
+            text = { Text("The photo and its notes will be removed from your album. This cannot be undone.", style = DI.type.body) },
             confirmButton = {
-                TextButton(onClick = {
+                ChunkyButton("Delete", onClick = {
                     confirmDelete = false
                     viewModel.delete(drawing.id)
                     onBack()
-                }) {
-                    Text("Delete", color = MaterialTheme.colorScheme.error)
-                }
+                }, chunk = Chunks.red(), height = 44.dp)
             },
-            dismissButton = {
-                TextButton(onClick = { confirmDelete = false }) { Text("Keep it") }
-            },
-            containerColor = MaterialTheme.colorScheme.surfaceContainer,
-            shape = RoundedCornerShape(26.dp)
-        )
-    }
-}
-
-@Composable
-private fun ZoomOverlay(model: Any, description: String, onDismiss: () -> Unit) {
-    val scale by animateFloatAsState(
-        targetValue = 1f,
-        animationSpec = spring(dampingRatio = 0.75f, stiffness = Spring.StiffnessMediumLow),
-        label = "zoom"
-    )
-    Box(
-        Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.scrim)
-            .pressable(scaleDown = 1f) { onDismiss() },
-        contentAlignment = Alignment.Center
-    ) {
-        AsyncImage(
-            model = model,
-            contentDescription = description,
-            contentScale = ContentScale.Fit,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp)
-                .graphicsLayer {
-                    scaleX = scale
-                    scaleY = scale
-                }
-        )
-    }
-}
-
-@Composable
-fun CircleIconButton(
-    iconRes: Int,
-    contentDescription: String,
-    onClick: () -> Unit,
-    rotate: Float = 0f,
-    modifier: Modifier = Modifier
-) {
-    Box(
-        modifier
-            .size(44.dp)
-            .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.surfaceContainer)
-            .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape)
-            .pressable(scaleDown = 0.9f, onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(
-            painter = painterResource(iconRes),
-            contentDescription = contentDescription,
-            tint = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier
-                .size(19.dp)
-                .graphicsLayer { rotationZ = rotate }
+            dismissButton = { ChunkyButton("Keep it", onClick = { confirmDelete = false }, chunk = Chunks.plain(), height = 44.dp) },
+            containerColor = DI.colors.surface,
+            shape = RoundedCornerShape(24.dp)
         )
     }
 }

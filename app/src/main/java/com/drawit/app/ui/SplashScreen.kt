@@ -27,10 +27,10 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.Image
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.ui.graphics.StrokeCap
 import com.drawit.app.R
+import com.drawit.app.ui.theme.DI
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -45,7 +45,7 @@ fun SplashScreen(onFinished: () -> Unit) {
     val strokeProgress = remember { Animatable(0f) }
     val wordAlpha = remember { Animatable(0f) }
     val exitAlpha = remember { Animatable(1f) }
-    val accent = MaterialTheme.colorScheme.primary
+    val accent = DI.colors.brand
 
     LaunchedEffect(Unit) {
         launch {
@@ -65,7 +65,7 @@ fun SplashScreen(onFinished: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .background(DI.colors.background)
             .graphicsLayer { alpha = exitAlpha.value },
         contentAlignment = Alignment.Center
     ) {
@@ -107,15 +107,15 @@ fun SplashScreen(onFinished: () -> Unit) {
             Spacer(Modifier.height(18.dp))
             Text(
                 text = "Draw it",
-                style = MaterialTheme.typography.headlineSmall,
-                color = MaterialTheme.colorScheme.onSurface,
+                style = DI.type.display,
+                color = DI.colors.text,
                 modifier = Modifier.graphicsLayer { alpha = wordAlpha.value }
             )
             Spacer(Modifier.height(6.dp))
             Text(
                 text = "A page a day",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = DI.type.bodyStrong,
+                color = DI.colors.textMuted,
                 modifier = Modifier.graphicsLayer { alpha = wordAlpha.value }
             )
         }

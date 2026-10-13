@@ -83,5 +83,7 @@ data class StreakOutcome(
     val freezesSpent: Int = 0,
     val streakLost: Boolean = false,
     val extended: Boolean = false,
-    val milestone: Boolean = false
+    val milestone: Boolean = false,
+    /** When [streakLost], how long the streak was before it ended. */
+    val lostStreak: Int = 0
 )

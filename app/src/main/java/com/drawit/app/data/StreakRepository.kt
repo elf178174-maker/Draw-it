@@ -75,6 +75,19 @@ class StreakRepository(context: Context) {
         )
     }
 
+    fun canAddFreeze(): Boolean = _state.value.freezes < StreakState.MAX_FREEZES
+
+    /** Adds one bought freeze, up to the usual cap. */
+    @Synchronized
+    fun addFreeze(): Boolean {
+        val s = _state.value
+        if (s.freezes >= StreakState.MAX_FREEZES) return false
+        val updated = s.copy(freezes = s.freezes + 1)
+        write(updated)
+        _state.value = updated
+        return true
+    }
+
     /** Replaces the whole streak, used when restoring a backup onto a fresh phone. */
     fun restore(state: StreakState) {
         write(state)
@@ -116,7 +129,8 @@ class StreakRepository(context: Context) {
         val lost = granted.current > 0
         return StreakOutcome(
             state = granted.copy(current = 0, frozenDays = prune(granted.frozenDays, today)),
-            streakLost = lost
+            streakLost = lost,
+            lostStreak = granted.current
         )
     }
 

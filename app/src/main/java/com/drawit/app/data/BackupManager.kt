@@ -4,7 +4,6 @@ import android.content.Context
 import android.net.Uri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.time.LocalDate
@@ -13,17 +12,21 @@ import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
 /**
- * Reads and writes a single .zip holding the album and the streak, so an album
- * can move to a new phone.
+ * Reads and writes a single .zip holding the album, the streak, ink, the
+ * avatar and saved references, so everything can move to a new phone.
  *
  * Layout:
- *   manifest.json   drawings, streak, and format version
+ *   manifest.json   see [BackupFormat]
  *   photos/<name>   one JPEG per drawing
  */
 class BackupManager(
     private val context: Context,
     private val drawings: DrawingRepository,
-    private val streak: StreakRepository
+    private val streak: StreakRepository,
+    private val wallet: WalletRepository,
+    private val profile: ProfileRepository,
+    private val references: ReferenceRepository,
+    private val progress: ProgressManager
 ) {
 
     data class ExportResult(val drawings: Int, val bytes: Long)
@@ -31,7 +34,10 @@ class BackupManager(
     data class ImportResult(
         val added: Int,
         val duplicates: Int,
-        val streakRestored: Boolean
+        val streakRestored: Boolean,
+        /** Ink restored from the backup, or back-paid for an old backup. */
+        val inkRestored: Int,
+        val avatarRestored: Boolean
     )
 
     fun suggestedFileName(today: LocalDate = LocalDate.now()): String = "draw-it-backup-$today.zip"
@@ -39,7 +45,13 @@ class BackupManager(
     suspend fun export(target: Uri): Result<ExportResult> = withContext(Dispatchers.IO) {
         runCatching {
             val entries = drawings.snapshot()
-            val manifest = buildManifest(entries)
+            val manifest = BackupFormat.build(
+                drawings = entries,
+                streak = streak.state.value,
+                wallet = wallet.state.value,
+                profile = profile.profile.value,
+                references = references.saved.value
+            )
             var bytes = 0L
 
             val stream = context.contentResolver.openOutputStream(target)
@@ -90,7 +102,7 @@ class BackupManager(
                                 name.startsWith("$PHOTOS/") -> {
                                     val leaf = name.substringAfter("$PHOTOS/")
                                     // Refuse anything trying to escape the staging folder.
-                                    if (leaf.isNotEmpty() && !leaf.contains('/') && leaf != "..") {
+                                    if (leaf.isNotEmpty() && !leaf.contains('/') && !leaf.contains('\\') && leaf != "..") {
                                         File(photoDir, leaf).outputStream().use { zip.copyTo(it) }
                                     }
                                 }
@@ -100,97 +112,47 @@ class BackupManager(
                     }
                 }
 
-                val parsed = manifest ?: error("That zip is not a Draw it backup.")
-                val incoming = readDrawings(parsed)
-                if (incoming.isEmpty()) error("That backup has no drawings in it.")
+                val parsed = BackupFormat.parse(manifest ?: error("That zip is not a Draw it backup."))
+                if (parsed.drawings.isEmpty()) error("That backup has no drawings in it.")
 
                 val hadNothing = drawings.snapshot().isEmpty()
-                val (added, duplicates) = drawings.merge(incoming) { drawing ->
+                val (added, duplicates) = drawings.merge(parsed.drawings) { drawing ->
                     File(photoDir, drawing.fileName).takeIf { it.exists() }
                 }
 
-                // Only adopt the backup's streak on a phone with nothing to lose.
-                val restored = if (hadNothing && added > 0) {
-                    readStreak(parsed)?.let { streak.restore(it); true } ?: false
+                // Saved references and owned avatar pieces never hurt to merge.
+                references.merge(parsed.references)
+
+                // Only adopt the backup's streak, ink and avatar on a phone with
+                // nothing to lose; otherwise ink could be duplicated by importing
+                // the same backup twice.
+                val fresh = hadNothing && added > 0
+                var streakRestored = false
+                var ink = 0
+                var avatarRestored = false
+                if (fresh) {
+                    parsed.streak?.let { streak.restore(it); streakRestored = true }
+                    ink = progress.restoreWallet(parsed.wallet, parsed.drawings, parsed.streak)
+                    parsed.profile?.let { profile.restore(progress.sanitizeProfile(it)); avatarRestored = true }
+                    progress.unlockStreakRewards()
                 } else {
-                    false
+                    parsed.profile?.let { incoming -> progress.mergeOwned(incoming.owned) }
                 }
 
-                ImportResult(added = added, duplicates = duplicates, streakRestored = restored)
+                ImportResult(
+                    added = added,
+                    duplicates = duplicates,
+                    streakRestored = streakRestored,
+                    inkRestored = ink,
+                    avatarRestored = avatarRestored
+                )
             }
         } finally {
             staging.deleteRecursively()
         }
     }
 
-    // -- manifest ---------------------------------------------------------
-
-    private fun buildManifest(entries: List<Drawing>): JSONObject {
-        val array = JSONArray()
-        entries.forEach { d ->
-            array.put(
-                JSONObject()
-                    .put("id", d.id)
-                    .put("title", d.title)
-                    .put("note", d.note)
-                    .put("createdAt", d.createdAt)
-                    .put("fileName", d.fileName)
-            )
-        }
-        val s = streak.state.value
-        return JSONObject()
-            .put("format", FORMAT_VERSION)
-            .put("app", "Draw it")
-            .put("exportedAt", System.currentTimeMillis())
-            .put("drawings", array)
-            .put(
-                "streak",
-                JSONObject()
-                    .put("current", s.current)
-                    .put("best", s.best)
-                    .put("lastCountedDay", s.lastCountedDay)
-                    .put("freezes", s.freezes)
-                    .put("lastGrantWeek", s.lastGrantWeek)
-                    .put("freezesUsedTotal", s.freezesUsedTotal)
-                    .put("frozenDays", JSONArray(s.frozenDays.toList()))
-            )
-    }
-
-    private fun readDrawings(manifest: JSONObject): List<Drawing> {
-        val array = manifest.optJSONArray("drawings") ?: return emptyList()
-        return (0 until array.length()).mapNotNull { i ->
-            val o = array.optJSONObject(i) ?: return@mapNotNull null
-            val id = o.optString("id")
-            val fileName = o.optString("fileName")
-            if (id.isEmpty() || fileName.isEmpty() || fileName.contains('/')) return@mapNotNull null
-            Drawing(
-                id = id,
-                title = o.optString("title", "Untitled"),
-                note = o.optString("note", ""),
-                createdAt = o.optLong("createdAt", System.currentTimeMillis()),
-                fileName = fileName
-            )
-        }
-    }
-
-    private fun readStreak(manifest: JSONObject): StreakState? {
-        val o = manifest.optJSONObject("streak") ?: return null
-        val frozen = o.optJSONArray("frozenDays")
-        return StreakState(
-            current = o.optInt("current", 0),
-            best = o.optInt("best", 0),
-            lastCountedDay = o.optLong("lastCountedDay", StreakState.NEVER),
-            freezes = o.optInt("freezes", 1).coerceIn(0, StreakState.MAX_FREEZES),
-            lastGrantWeek = o.optLong("lastGrantWeek", StreakState.NEVER),
-            freezesUsedTotal = o.optInt("freezesUsedTotal", 0),
-            frozenDays = buildSet {
-                if (frozen != null) for (i in 0 until frozen.length()) add(frozen.optLong(i))
-            }
-        )
-    }
-
     private companion object {
-        const val FORMAT_VERSION = 1
         const val MANIFEST = "manifest.json"
         const val PHOTOS = "photos"
     }
