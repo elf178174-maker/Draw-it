@@ -35,6 +35,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -112,9 +113,13 @@ fun ShopScreen(viewModel: AppViewModel, onBack: () -> Unit) {
     val items = remember(slot) { slot?.let { AvatarCatalog.forSlot(it) } ?: emptyList() }
     val preview = selected?.let { look.with(it) } ?: look
 
-    // Leaving the shop clears "new" badges for everything that was on show.
+    // Leaving the shop clears "new" badges, but only on the tabs that were opened.
     val unseen by rememberUpdatedState(profile.unseen)
-    DisposableEffect(Unit) { onDispose { viewModel.markSeen(unseen) } }
+    val viewed = remember { mutableSetOf<AvatarSlot>() }
+    LaunchedEffect(slot) { slot?.let { viewed += it } }
+    DisposableEffect(Unit) {
+        onDispose { viewModel.markSeen(unseen.filter { id -> AvatarCatalog.get(id)?.slot in viewed }.toSet()) }
+    }
 
     fun celebratePurchase() {
         scope.launch {

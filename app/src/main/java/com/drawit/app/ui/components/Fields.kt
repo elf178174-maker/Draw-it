@@ -87,7 +87,8 @@ fun ChunkyTextField(
             textStyle = DI.type.bodyStrong.copy(color = DI.colors.text),
             cursorBrush = SolidColor(DI.colors.ice),
             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = imeAction),
-            keyboardActions = KeyboardActions(onAny = { onImeAction?.invoke() }),
+            // Without a handler the keyboard keeps its own behaviour, so Next still moves on.
+            keyboardActions = if (onImeAction != null) KeyboardActions(onAny = { onImeAction() }) else KeyboardActions.Default,
             modifier = Modifier.fillMaxWidth().heightIn(min = if (minLines > 1) (minLines * 22).dp else 0.dp)
         )
     }

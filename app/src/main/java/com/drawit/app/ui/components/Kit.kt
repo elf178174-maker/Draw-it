@@ -41,6 +41,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -266,16 +267,18 @@ fun RollingNumber(
         text.forEachIndexed { index, ch ->
             // Key by position from the right so units stay units.
             val position = text.length - index
-            AnimatedContent(
-                targetState = ch,
-                transitionSpec = {
-                    val dir = if (up) 1 else -1
-                    (slideInVertically(spring(dampingRatio = 0.6f, stiffness = Spring.StiffnessMediumLow)) { it * dir } + fadeIn(tween(120)))
-                        .togetherWith(slideOutVertically(tween(180)) { -it * dir } + fadeOut(tween(120)))
-                },
-                label = "digit$position"
-            ) { digit ->
-                Text(digit.toString(), style = style, color = color)
+            key(position) {
+                AnimatedContent(
+                    targetState = ch,
+                    transitionSpec = {
+                        val dir = if (up) 1 else -1
+                        (slideInVertically(spring(dampingRatio = 0.6f, stiffness = Spring.StiffnessMediumLow)) { it * dir } + fadeIn(tween(120)))
+                            .togetherWith(slideOutVertically(tween(180)) { -it * dir } + fadeOut(tween(120)))
+                    },
+                    label = "digit$position"
+                ) { digit ->
+                    Text(digit.toString(), style = style, color = color)
+                }
             }
         }
     }

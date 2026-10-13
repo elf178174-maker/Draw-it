@@ -68,6 +68,13 @@ class WalletRepository(context: Context) {
     @Synchronized
     fun markInitialized() = commit(_state.value.copy(initialized = true))
 
+    /** The welcome gift still waiting to be shown, as JSON; kept until it has been seen. */
+    fun pendingWelcome(): String? = prefs.getString(KEY_WELCOME, null)
+
+    fun savePendingWelcome(json: String?) {
+        prefs.edit().apply { if (json == null) remove(KEY_WELCOME) else putString(KEY_WELCOME, json) }.apply()
+    }
+
     /** Replaces everything, used when restoring a backup onto a fresh phone. */
     @Synchronized
     fun restore(state: WalletState) = commit(state.copy(initialized = true))
@@ -120,6 +127,7 @@ class WalletRepository(context: Context) {
         private const val KEY_PERFECT_WEEK = "wallet_perfect_week"
         private const val KEY_HISTORY = "wallet_history"
         private const val KEY_INITIALIZED = "wallet_initialized"
+        private const val KEY_WELCOME = "wallet_welcome_pending"
 
         fun historyToJson(list: List<InkTransaction>): JSONArray = JSONArray().apply {
             list.forEach {

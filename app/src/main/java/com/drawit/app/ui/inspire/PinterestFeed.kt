@@ -80,7 +80,8 @@ class PinterestFeed(context: Context) {
         addJavascriptInterface(Bridge(), BRIDGE)
         webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView?, url: String?) {
-                if (url?.let { Uri.parse(it).host?.endsWith("pinterest.com") } != true) return
+                // Pinterest may send visitors to a country site (pinterest.se, .co.uk...).
+                if (url?.let { Uri.parse(it).host?.let { host -> isPinterestHost(host) } } != true) return
                 pageReady = true
                 pendingRun?.let { run -> pendingRun = null; run() }
             }
@@ -204,6 +205,10 @@ class PinterestFeed(context: Context) {
     companion object {
         private const val BRIDGE = "DrawItBridge"
         private const val TIMEOUT_MS = 14_000L
+
+        private val pinterestHost = Regex("^([a-z0-9-]+\\.)*pinterest(\\.[a-z]{2,3}){1,2}$")
+
+        fun isPinterestHost(host: String): Boolean = pinterestHost.matches(host.lowercase())
 
         fun homeUrl() = "https://www.pinterest.com/"
         fun searchUrl(q: String) = "https://www.pinterest.com/search/pins/?q=" + Uri.encode(q) + "&rs=typed"

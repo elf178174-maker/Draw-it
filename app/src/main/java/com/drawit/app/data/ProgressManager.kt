@@ -10,6 +10,8 @@ import com.drawit.app.ui.art.AvatarSlot
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import org.json.JSONArray
+import org.json.JSONObject
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -50,17 +52,52 @@ class ProgressManager(
     private val profile: ProfileRepository
 ) {
 
-    private val _welcome = MutableStateFlow<WelcomeGift?>(null)
+    // Kept on disk until seen: the migration can run in a process started by
+    // the update or boot receiver, long before the app is opened.
+    private val _welcome = MutableStateFlow(readPendingWelcome())
     val welcome: StateFlow<WelcomeGift?> = _welcome.asStateFlow()
 
     fun clearWelcome() {
         _welcome.value = null
+        wallet.savePendingWelcome(null)
+    }
+
+    private fun readPendingWelcome(): WelcomeGift? {
+        val raw = wallet.pendingWelcome() ?: return null
+        return runCatching {
+            val o = JSONObject(raw)
+            val ids = o.optJSONArray("unlocked")
+            WelcomeGift(
+                welcome = o.optInt("welcome"),
+                backPay = o.optInt("backPay"),
+                drawings = o.optInt("drawings"),
+                unlocked = if (ids == null) emptyList() else (0 until ids.length()).mapNotNull { AvatarCatalog.get(ids.optString(it)) }
+            )
+        }.getOrNull()
+    }
+
+    private fun WelcomeGift.toJson(): String = JSONObject()
+        .put("welcome", welcome)
+        .put("backPay", backPay)
+        .put("drawings", drawings)
+        .put("unlocked", JSONArray().apply { unlocked.forEach { put(it.id) } })
+        .toString()
+
+    /**
+     * True while the wallet holds nothing but the welcome gift. Only then may
+     * a backup replace it: otherwise newer ink and purchases would be lost, or
+     * the same drawings paid for again.
+     */
+    fun walletIsPristine(): Boolean {
+        val w = wallet.state.value
+        return w.spent == 0 && w.earned <= Economy.WELCOME_GIFT
     }
 
     /** Counts a drawing that was just saved and pays out whatever it earned. */
     @Synchronized
     fun recordDrawing(drawings: List<Drawing>, today: LocalDate = LocalDate.now()): Celebration {
-        val before = streak.settle(today).state.current
+        val settled = streak.settle(today).state
+        val before = settled.current
         val outcome = streak.recordDrawing(today)
         val after = outcome.state.current
         val reward = RewardRules.forDrawing(
@@ -82,7 +119,8 @@ class ProgressManager(
             balanceBefore = balanceBefore,
             balanceAfter = wallet.state.value.balance,
             unlocked = unlocked,
-            isRecord = outcome.extended && after > 1 && after >= outcome.state.best
+            // Strictly beyond the old best: matching it isn't a new record.
+            isRecord = outcome.extended && after > 1 && after > settled.best
         )
     }
 
@@ -104,10 +142,12 @@ class ProgressManager(
                 lastRewardDay = if (state.drewOn(LocalDate.now())) LocalDate.now().toEpochDay() else -1L
             )
         )
-        wallet.markInitialized()
-        ensureStarterLook()
+        ensureStarterLook(since = drawings.map { it.createdAt }.filter { it > 0L }.minOrNull())
         val unlocked = unlockStreakRewards()
-        _welcome.value = WelcomeGift(Economy.WELCOME_GIFT, backPay, drawings.size, unlocked)
+        val gift = WelcomeGift(Economy.WELCOME_GIFT, backPay, drawings.size, unlocked)
+        wallet.savePendingWelcome(gift.toJson())
+        wallet.markInitialized()
+        _welcome.value = gift
     }
 
     /**
@@ -201,10 +241,12 @@ class ProgressManager(
         return true
     }
 
-    private fun ensureStarterLook() {
+    /** Dresses a brand-new profile; [since] is the first drawing, so "drawing since" goes back that far. */
+    private fun ensureStarterLook(since: Long? = null) {
+        val now = System.currentTimeMillis()
         profile.update { p ->
             if (p.equipped.isNotEmpty()) p
-            else p.copy(equipped = AvatarCatalog.defaultLook.mapKeys { it.key.name }, createdAt = System.currentTimeMillis())
+            else p.copy(equipped = AvatarCatalog.defaultLook.mapKeys { it.key.name }, createdAt = minOf(since ?: now, now))
         }
     }
 

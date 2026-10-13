@@ -140,22 +140,22 @@ fun DrawItRoot(
                     popExitTransition = { slideOutVertically(tween(300, easing = FastOutSlowInEasing)) { it / 5 } + fadeOut(tween(200)) }
                 ) {
                     // The celebration overlay takes over as soon as the save lands.
-                    AddDrawingScreen(viewModel = viewModel, onClose = { navController.popBackStack() }, onSaved = { navController.popBackStack() })
+                    AddDrawingScreen(viewModel = viewModel, onClose = { navController.close(Routes.ADD) }, onSaved = { navController.close(Routes.ADD) })
                 }
                 composable(Routes.STREAK, enterTransition = secondaryEnter, popExitTransition = secondaryExit) {
-                    StreakScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
+                    StreakScreen(viewModel = viewModel, onBack = { navController.close(Routes.STREAK) })
                 }
                 composable(Routes.SHOP, enterTransition = secondaryEnter, popExitTransition = secondaryExit) {
-                    ShopScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
+                    ShopScreen(viewModel = viewModel, onBack = { navController.close(Routes.SHOP) })
                 }
                 composable(Routes.SETTINGS, enterTransition = secondaryEnter, popExitTransition = secondaryExit) {
-                    SettingsScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
+                    SettingsScreen(viewModel = viewModel, onBack = { navController.close(Routes.SETTINGS) })
                 }
-                composable("${Routes.DETAIL}/{id}", enterTransition = secondaryEnter, popExitTransition = secondaryExit) { entry ->
+                composable(DETAIL_ROUTE, enterTransition = secondaryEnter, popExitTransition = secondaryExit) { entry ->
                     DrawingDetailScreen(
                         viewModel = viewModel,
                         drawingId = entry.arguments?.getString("id").orEmpty(),
-                        onBack = { navController.popBackStack() }
+                        onBack = { navController.close(DETAIL_ROUTE) }
                     )
                 }
             }
@@ -175,7 +175,7 @@ fun DrawItRoot(
 
         // Overlays, most important last so it sits on top.
         notice?.let { pending ->
-            if (celebration == null && welcome == null) {
+            if (celebration == null && welcome == null && !showSplash) {
                 StreakNoticeOverlay(pending, onDone = { viewModel.clearStreakNotice() })
             }
         }
@@ -212,6 +212,17 @@ private val secondaryEnter: androidx.compose.animation.AnimatedContentTransition
 
 private val secondaryExit: androidx.compose.animation.AnimatedContentTransitionScope<androidx.navigation.NavBackStackEntry>.() -> androidx.compose.animation.ExitTransition =
     { slideOutHorizontally(tween(280, easing = FastOutSlowInEasing)) { it / 6 } + fadeOut(tween(180)) }
+
+private const val DETAIL_ROUTE = "${Routes.DETAIL}/{id}"
+
+/**
+ * Leaves [route] only if it is still the top screen. A double-tapped back
+ * arrow, or a save that finishes after the user already backed out, would
+ * otherwise pop the start screen too and leave nothing showing.
+ */
+private fun NavHostController.close(route: String) {
+    if (currentBackStackEntry?.destination?.route == route) popBackStack()
+}
 
 /** Moves between bottom-bar tabs, keeping each tab's own scroll state. */
 private fun NavHostController.switchTab(route: String) {

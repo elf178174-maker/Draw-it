@@ -159,7 +159,15 @@ private fun FeedTab(viewModel: AppViewModel, onOpen: (Pin) -> Unit, onBrowse: (S
     DisposableEffect(Unit) { onDispose { feed.destroy() } }
     var selected by rememberSaveable { mutableIntStateOf(0) }
     var text by rememberSaveable { mutableStateOf("") }
-    LaunchedEffect(Unit) { if (feed.query.isEmpty()) feed.search(topics[selected].query) }
+    LaunchedEffect(Unit) {
+        // The feed is new each time the tab comes back, but the chosen topic or
+        // typed search is restored, and -1 means a typed search.
+        if (feed.query.isEmpty()) {
+            val restored = topics.getOrNull(selected)?.query ?: text.takeIf { it.isNotBlank() }
+            if (restored == null) selected = 0
+            feed.search(restored ?: topics[0].query)
+        }
+    }
 
     val grid = rememberLazyStaggeredGridState()
     val nearEnd by remember {

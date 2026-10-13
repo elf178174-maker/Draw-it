@@ -123,21 +123,30 @@ class BackupManager(
                 // Saved references and owned avatar pieces never hurt to merge.
                 references.merge(parsed.references)
 
-                // Only adopt the backup's streak, ink and avatar on a phone with
-                // nothing to lose; otherwise ink could be duplicated by importing
-                // the same backup twice.
+                // The backup's streak only comes back onto a phone with no drawings,
+                // and never replaces a better one. Ink and the avatar are stricter:
+                // only while this phone's wallet is untouched, so a backup can't
+                // wipe newer progress or pay for the same drawings twice.
                 val fresh = hadNothing && added > 0
+                val adoptWallet = fresh && progress.walletIsPristine()
                 var streakRestored = false
                 var ink = 0
                 var avatarRestored = false
                 if (fresh) {
-                    parsed.streak?.let { streak.restore(it); streakRestored = true }
+                    parsed.streak?.let { incoming ->
+                        if (incoming.best >= streak.state.value.best) {
+                            streak.restore(incoming)
+                            streakRestored = true
+                        }
+                    }
+                }
+                if (adoptWallet) {
                     ink = progress.restoreWallet(parsed.wallet, parsed.drawings, parsed.streak)
                     parsed.profile?.let { profile.restore(progress.sanitizeProfile(it)); avatarRestored = true }
-                    progress.unlockStreakRewards()
                 } else {
                     parsed.profile?.let { incoming -> progress.mergeOwned(incoming.owned) }
                 }
+                progress.unlockStreakRewards()
 
                 ImportResult(
                     added = added,
