@@ -30,6 +30,19 @@ data class Celebration(
     val extended: Boolean get() = outcome.extended
 }
 
+/** What importing a backup did to the wallet. */
+data class InkImport(val amount: Int, val alreadyAdded: Boolean)
+
+/** Identifies where a backup's ink came from, so it is only ever brought in once. */
+fun backupKey(contents: BackupFormat.Contents): String {
+    val walletId = contents.wallet?.id.orEmpty()
+    return when {
+        walletId.isNotEmpty() -> "wallet:$walletId"
+        contents.exportedAt != null -> "export:${contents.exportedAt}"
+        else -> "drawings:" + contents.drawings.map { it.id }.sorted().joinToString(",").hashCode()
+    }
+}
+
 /** The one-off gift shown the first time the new version opens. */
 data class WelcomeGift(val welcome: Int, val backPay: Int, val drawings: Int, val unlocked: List<AvatarItem>) {
     val total: Int get() = welcome + backPay
@@ -167,6 +180,67 @@ class ProgressManager(
         wallet.updateRewards(wallet.state.value.rewards.copy(goalRewardedUpTo = Economy.previousGoal(current)))
         wallet.markInitialized()
         return backPay
+    }
+
+    /**
+     * Brings a backup's ink onto this phone, at most once per source wallet
+     * (or per export, for backups from before wallets had ids).
+     *  - [replace]: the phone has nothing of its own yet, so the backup's
+     *    wallet takes over; old backups are paid for their drawings instead.
+     *  - Otherwise the backup's balance is added on top, or for an old backup,
+     *    the ink its new drawing days would have earned.
+     * [before] is this phone's album and [localBest] its best streak, both
+     * from before the import.
+     */
+    @Synchronized
+    fun importInk(
+        contents: BackupFormat.Contents,
+        before: List<Drawing>,
+        added: List<Drawing>,
+        localBest: Int,
+        replace: Boolean
+    ): InkImport {
+        val w = wallet.state.value
+        val saved = contents.wallet
+        val key = backupKey(contents)
+        if (key in w.applied || (saved != null && saved.id.isNotEmpty() && saved.id == w.id)) {
+            return InkImport(0, alreadyAdded = true)
+        }
+        val amount = when {
+            replace -> restoreWallet(saved, added, contents.streak)
+            saved != null -> saved.balance.also { if (it > 0) wallet.credit(it, RewardKind.Retro, "Ink from your backup") }
+            else -> {
+                val oldDays = before.map { dayOf(it.createdAt) }
+                val newDays = oldDays + added.map { dayOf(it.createdAt) }
+                val incomingBest = contents.streak?.best ?: 0
+                val owed = Economy.retroactive(newDays, maxOf(localBest, incomingBest)) - Economy.retroactive(oldDays, localBest)
+                owed.coerceAtLeast(0).also { if (it > 0) wallet.credit(it, RewardKind.Retro, "Restored ${added.size} drawings") }
+            }
+        }
+        wallet.markApplied(key)
+        return InkImport(amount, alreadyAdded = false)
+    }
+
+    /**
+     * After a streak arrives from a backup, marks the goals it has already
+     * passed as paid, and today's ink too if the backup already drew today.
+     */
+    @Synchronized
+    fun alignRewardsWithStreak(today: LocalDate = LocalDate.now()) {
+        val s = streak.state.value
+        val r = wallet.state.value.rewards
+        val day = today.toEpochDay()
+        val updated = r.copy(
+            goalRewardedUpTo = maxOf(r.goalRewardedUpTo, Economy.previousGoal(s.current)),
+            lastRewardDay = if (s.lastCountedDay == day) maxOf(r.lastRewardDay, day) else r.lastRewardDay
+        )
+        if (updated != r) wallet.updateRewards(updated)
+    }
+
+    /** Moves the profile's "drawing since" back to the earliest drawing, if that is earlier. */
+    fun noteFirstDrawing(drawings: List<Drawing>) {
+        val first = drawings.map { it.createdAt }.filter { it > 0L }.minOrNull() ?: return
+        profile.update { p -> if (p.createdAt == 0L || first < p.createdAt) p.copy(createdAt = first) else p }
     }
 
     /** Drops ids this version doesn't know, so an odd backup can't break the avatar. */

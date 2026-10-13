@@ -22,6 +22,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -107,55 +108,55 @@ fun DrawItRoot(
                 composable(Routes.TODAY) {
                     TodayScreen(
                         viewModel = viewModel,
-                        onAdd = { navController.navigate(Routes.ADD) },
+                        onAdd = { navController.open(Routes.ADD) },
                         onOpenAlbum = { navController.switchTab(Routes.ALBUM) },
                         onOpenInspiration = { navController.switchTab(Routes.INSPIRATION) },
                         onOpenReminder = { navController.switchTab(Routes.REMINDER) },
-                        onOpenStreak = { navController.navigate(Routes.STREAK) },
+                        onOpenStreak = { navController.open(Routes.STREAK) },
                         onOpenProfile = { navController.switchTab(Routes.PROFILE) },
-                        onOpenShop = { navController.navigate(Routes.SHOP) },
-                        onOpenDrawing = { navController.navigate("${Routes.DETAIL}/$it") }
+                        onOpenShop = { navController.open(Routes.SHOP) },
+                        onOpenDrawing = { navController.open("${Routes.DETAIL}/$it") }
                     )
                 }
                 composable(Routes.INSPIRATION) { InspirationScreen(viewModel) }
                 composable(Routes.ALBUM) {
                     AlbumScreen(
                         viewModel = viewModel,
-                        onAdd = { navController.navigate(Routes.ADD) },
-                        onOpenDrawing = { navController.navigate("${Routes.DETAIL}/$it") }
+                        onAdd = { navController.open(Routes.ADD) },
+                        onOpenDrawing = { navController.open("${Routes.DETAIL}/$it") }
                     )
                 }
                 composable(Routes.REMINDER) { ReminderScreen(viewModel) }
                 composable(Routes.PROFILE) {
                     ProfileScreen(
                         viewModel = viewModel,
-                        onOpenShop = { navController.navigate(Routes.SHOP) },
-                        onOpenSettings = { navController.navigate(Routes.SETTINGS) },
-                        onOpenStreak = { navController.navigate(Routes.STREAK) }
+                        onOpenShop = { navController.open(Routes.SHOP) },
+                        onOpenSettings = { navController.open(Routes.SETTINGS) },
+                        onOpenStreak = { navController.open(Routes.STREAK) }
                     )
                 }
                 composable(
                     route = Routes.ADD,
                     enterTransition = { slideInVertically(tween(360, easing = FastOutSlowInEasing)) { it / 5 } + fadeIn(tween(240)) },
                     popExitTransition = { slideOutVertically(tween(300, easing = FastOutSlowInEasing)) { it / 5 } + fadeOut(tween(200)) }
-                ) {
+                ) { entry ->
                     // The celebration overlay takes over as soon as the save lands.
-                    AddDrawingScreen(viewModel = viewModel, onClose = { navController.close(Routes.ADD) }, onSaved = { navController.close(Routes.ADD) })
+                    AddDrawingScreen(viewModel = viewModel, onClose = { navController.close(entry) }, onSaved = { navController.close(entry) })
                 }
-                composable(Routes.STREAK, enterTransition = secondaryEnter, popExitTransition = secondaryExit) {
-                    StreakScreen(viewModel = viewModel, onBack = { navController.close(Routes.STREAK) })
+                composable(Routes.STREAK, enterTransition = secondaryEnter, popExitTransition = secondaryExit) { entry ->
+                    StreakScreen(viewModel = viewModel, onBack = { navController.close(entry) })
                 }
-                composable(Routes.SHOP, enterTransition = secondaryEnter, popExitTransition = secondaryExit) {
-                    ShopScreen(viewModel = viewModel, onBack = { navController.close(Routes.SHOP) })
+                composable(Routes.SHOP, enterTransition = secondaryEnter, popExitTransition = secondaryExit) { entry ->
+                    ShopScreen(viewModel = viewModel, onBack = { navController.close(entry) })
                 }
-                composable(Routes.SETTINGS, enterTransition = secondaryEnter, popExitTransition = secondaryExit) {
-                    SettingsScreen(viewModel = viewModel, onBack = { navController.close(Routes.SETTINGS) })
+                composable(Routes.SETTINGS, enterTransition = secondaryEnter, popExitTransition = secondaryExit) { entry ->
+                    SettingsScreen(viewModel = viewModel, onBack = { navController.close(entry) })
                 }
                 composable(DETAIL_ROUTE, enterTransition = secondaryEnter, popExitTransition = secondaryExit) { entry ->
                     DrawingDetailScreen(
                         viewModel = viewModel,
                         drawingId = entry.arguments?.getString("id").orEmpty(),
-                        onBack = { navController.close(DETAIL_ROUTE) }
+                        onBack = { navController.close(entry) }
                     )
                 }
             }
@@ -185,7 +186,7 @@ fun DrawItRoot(
                     gift,
                     onShop = {
                         viewModel.clearWelcome()
-                        navController.navigate(Routes.SHOP)
+                        navController.open(Routes.SHOP)
                     },
                     onDone = { viewModel.clearWelcome() }
                 )
@@ -216,12 +217,17 @@ private val secondaryExit: androidx.compose.animation.AnimatedContentTransitionS
 private const val DETAIL_ROUTE = "${Routes.DETAIL}/{id}"
 
 /**
- * Leaves [route] only if it is still the top screen. A double-tapped back
- * arrow, or a save that finishes after the user already backed out, would
- * otherwise pop the start screen too and leave nothing showing.
+ * Leaves the screen [entry] only if it is still the one on top. A double-tapped
+ * back arrow, or a save that finishes after the user already backed out, would
+ * otherwise pop whatever is underneath, even the start screen.
  */
-private fun NavHostController.close(route: String) {
-    if (currentBackStackEntry?.destination?.route == route) popBackStack()
+private fun NavHostController.close(entry: NavBackStackEntry) {
+    if (currentBackStackEntry == entry) popBackStack()
+}
+
+/** Opens a screen on top, never twice in a row from a double tap. */
+private fun NavHostController.open(route: String) {
+    navigate(route) { launchSingleTop = true }
 }
 
 /** Moves between bottom-bar tabs, keeping each tab's own scroll state. */

@@ -273,6 +273,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         append(".")
                         if (r.streakRestored) append(" Your streak came back too.")
                         if (r.inkRestored > 0) append(" ${r.inkRestored} ink restored.")
+                        if (r.inkAlreadyAdded) append(" Its ink was already added by an earlier import.")
                         if (r.avatarRestored) append(" Your avatar is back.")
                     }
                 },

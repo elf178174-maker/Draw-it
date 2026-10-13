@@ -9,7 +9,8 @@ import org.json.JSONObject
  *
  * Format history:
  *  1. drawings + streak (the first version of the app).
- *  2. adds wallet (ink), profile (avatar) and saved references.
+ *  2. adds wallet (ink), profile (avatar) and saved references. The wallet's
+ *     id was added within format 2, so it may be missing too.
  *
  * Every field added after format 1 is optional when reading, so any backup
  * ever written still imports.
@@ -19,6 +20,7 @@ object BackupFormat {
 
     data class Contents(
         val format: Int,
+        val exportedAt: Long?,
         val drawings: List<Drawing>,
         val streak: StreakState?,
         val wallet: WalletState?,
@@ -64,6 +66,7 @@ object BackupFormat {
             .put(
                 "wallet",
                 JSONObject()
+                    .put("id", wallet.id)
                     .put("balance", wallet.balance)
                     .put("earned", wallet.earned)
                     .put("spent", wallet.spent)
@@ -80,6 +83,7 @@ object BackupFormat {
 
     fun parse(manifest: JSONObject): Contents = Contents(
         format = manifest.optInt("format", 1),
+        exportedAt = manifest.optLong("exportedAt", 0L).takeIf { it > 0L },
         drawings = readDrawings(manifest),
         streak = readStreak(manifest),
         wallet = readWallet(manifest),
@@ -136,7 +140,8 @@ object BackupFormat {
                 perfectWeekPaid = o.optLong("perfectWeekPaid", -1L)
             ),
             history = o.optJSONArray("history")?.let { runCatching { WalletRepository.historyFromJson(it) }.getOrNull() } ?: emptyList(),
-            initialized = true
+            initialized = true,
+            id = o.optString("id", "")
         )
     }
 }

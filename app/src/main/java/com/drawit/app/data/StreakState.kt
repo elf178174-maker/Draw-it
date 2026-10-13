@@ -30,6 +30,48 @@ data class StreakState(
     companion object {
         const val NEVER = -1L
 
+        /**
+         * Combines this phone's streak with one from a backup. The more recent
+         * one wins. If this phone's run began right where the backup's ended,
+         * or overlaps it, the two runs join up, so drawing once on a new phone
+         * before importing doesn't throw the old streak away. Best is the best
+         * of everything.
+         */
+        fun merge(local: StreakState, incoming: StreakState): StreakState {
+            val best = maxOf(local.best, incoming.best)
+            val frozen = local.frozenDays + incoming.frozenDays
+            if (incoming.lastCountedDay == NEVER) return local.copy(best = best)
+            val incomingWins = local.lastCountedDay == NEVER ||
+                incoming.lastCountedDay > local.lastCountedDay ||
+                (incoming.lastCountedDay == local.lastCountedDay && incoming.current > local.current)
+            if (incomingWins) return incoming.copy(best = maxOf(best, incoming.current), frozenDays = frozen)
+            if (incoming.lastCountedDay == local.lastCountedDay) return local.copy(best = best, frozenDays = frozen)
+
+            // This phone is more recent: join the backup's run on if it reaches it.
+            if (local.current <= 0 || incoming.current <= 0) return local.copy(best = best, frozenDays = frozen)
+            val start = runStart(local)
+            if (incoming.lastCountedDay < start - 1) return local.copy(best = best, frozenDays = frozen)
+            val overlap = (start..incoming.lastCountedDay).count { it !in local.frozenDays }
+            val joined = local.current + (incoming.current - overlap).coerceAtLeast(0)
+            return local.copy(current = joined, best = maxOf(best, joined), frozenDays = frozen)
+        }
+
+        /** The first day of [s]'s current run, walking back over the days a freeze covered. */
+        private fun runStart(s: StreakState): Long {
+            var day = s.lastCountedDay
+            var start = day
+            var counted = 0
+            var steps = 0
+            val limit = s.current + s.frozenDays.size + 1
+            while (counted < s.current && steps < limit) {
+                if (day !in s.frozenDays) counted++
+                start = day
+                day--
+                steps++
+            }
+            return start
+        }
+
         /** Freezes are capped so the streak still has to mean something. */
         const val MAX_FREEZES = 3
         const val FREEZES_PER_WEEK = 1

@@ -37,7 +37,9 @@ class BackupManager(
         val streakRestored: Boolean,
         /** Ink restored from the backup, or back-paid for an old backup. */
         val inkRestored: Int,
-        val avatarRestored: Boolean
+        val avatarRestored: Boolean,
+        /** This backup's ink was already brought in by an earlier import. */
+        val inkAlreadyAdded: Boolean = false
     )
 
     fun suggestedFileName(today: LocalDate = LocalDate.now()): String = "draw-it-backup-$today.zip"
@@ -115,45 +117,56 @@ class BackupManager(
                 val parsed = BackupFormat.parse(manifest ?: error("That zip is not a Draw it backup."))
                 if (parsed.drawings.isEmpty()) error("That backup has no drawings in it.")
 
-                val hadNothing = drawings.snapshot().isEmpty()
+                val before = drawings.snapshot()
+                val hadNothing = before.isEmpty()
+                val localBest = streak.state.value.best
                 val (added, duplicates) = drawings.merge(parsed.drawings) { drawing ->
                     File(photoDir, drawing.fileName).takeIf { it.exists() }
                 }
+                val beforeIds = before.map { it.id }.toSet()
+                val after = drawings.snapshot()
+                val afterIds = after.map { it.id }.toSet()
+                val addedDrawings = parsed.drawings.filter { it.id !in beforeIds && it.id in afterIds }
 
-                // Saved references and owned avatar pieces never hurt to merge.
+                // Saved references never hurt to merge.
                 references.merge(parsed.references)
 
-                // The backup's streak only comes back onto a phone with no drawings,
-                // and never replaces a better one. Ink and the avatar are stricter:
-                // only while this phone's wallet is untouched, so a backup can't
-                // wipe newer progress or pay for the same drawings twice.
-                val fresh = hadNothing && added > 0
-                val adoptWallet = fresh && progress.walletIsPristine()
-                var streakRestored = false
-                var ink = 0
+                // Ink: the backup's wallet only replaces this one while this phone
+                // has nothing of its own; otherwise its ink is added on top. Either
+                // way each source pays once, however often it is imported.
+                val replace = hadNothing && added > 0 && progress.walletIsPristine()
+                val ink = progress.importInk(parsed, before, addedDrawings, localBest, replace)
+
                 var avatarRestored = false
-                if (fresh) {
-                    parsed.streak?.let { incoming ->
-                        if (incoming.best >= streak.state.value.best) {
-                            streak.restore(incoming)
-                            streakRestored = true
-                        }
+                val incomingProfile = parsed.profile
+                if (replace && incomingProfile != null) {
+                    profile.restore(progress.sanitizeProfile(incomingProfile))
+                    avatarRestored = true
+                } else if (incomingProfile != null) {
+                    progress.mergeOwned(incomingProfile.owned)
+                }
+
+                // Streak: the newer one wins, and runs that meet are joined.
+                var streakRestored = false
+                parsed.streak?.let { incoming ->
+                    val local = streak.state.value
+                    val merged = StreakState.merge(local, incoming)
+                    if (merged != local) {
+                        streak.restore(merged)
+                        streakRestored = merged.current != local.current || merged.best != local.best
                     }
                 }
-                if (adoptWallet) {
-                    ink = progress.restoreWallet(parsed.wallet, parsed.drawings, parsed.streak)
-                    parsed.profile?.let { profile.restore(progress.sanitizeProfile(it)); avatarRestored = true }
-                } else {
-                    parsed.profile?.let { incoming -> progress.mergeOwned(incoming.owned) }
-                }
+                progress.alignRewardsWithStreak()
                 progress.unlockStreakRewards()
+                progress.noteFirstDrawing(after)
 
                 ImportResult(
                     added = added,
                     duplicates = duplicates,
                     streakRestored = streakRestored,
-                    inkRestored = ink,
-                    avatarRestored = avatarRestored
+                    inkRestored = ink.amount,
+                    avatarRestored = avatarRestored,
+                    inkAlreadyAdded = ink.alreadyAdded
                 )
             }
         } finally {

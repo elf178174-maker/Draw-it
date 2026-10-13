@@ -159,14 +159,23 @@ private fun FeedTab(viewModel: AppViewModel, onOpen: (Pin) -> Unit, onBrowse: (S
     DisposableEffect(Unit) { onDispose { feed.destroy() } }
     var selected by rememberSaveable { mutableIntStateOf(0) }
     var text by rememberSaveable { mutableStateOf("") }
+    // The last search actually run, kept apart from whatever is half-typed in the box.
+    var submitted by rememberSaveable { mutableStateOf("") }
     LaunchedEffect(Unit) {
         // The feed is new each time the tab comes back, but the chosen topic or
-        // typed search is restored, and -1 means a typed search.
+        // typed search is restored; -1 means a typed search.
         if (feed.query.isEmpty()) {
-            val restored = topics.getOrNull(selected)?.query ?: text.takeIf { it.isNotBlank() }
+            val restored = topics.getOrNull(selected)?.query ?: submitted.takeIf { it.isNotBlank() }
             if (restored == null) selected = 0
             feed.search(restored ?: topics[0].query)
         }
+    }
+    fun searchTyped() {
+        val q = text.trim()
+        if (q.isEmpty()) return
+        selected = -1
+        submitted = q
+        feed.search(q)
     }
 
     val grid = rememberLazyStaggeredGridState()
@@ -187,13 +196,11 @@ private fun FeedTab(viewModel: AppViewModel, onOpen: (Pin) -> Unit, onBrowse: (S
                 text, { text = it },
                 placeholder = "Search Pinterest for references",
                 imeAction = ImeAction.Search,
-                onImeAction = { if (text.isNotBlank()) { selected = -1; feed.search(text) } },
+                onImeAction = { searchTyped() },
                 modifier = Modifier.weight(1f)
             )
             Spacer(Modifier.width(8.dp))
-            ChunkyIconButton(painterResource(R.drawable.ic_search), "Search", {
-                if (text.isNotBlank()) { selected = -1; feed.search(text) }
-            }, chunk = Chunks.ice(), size = 48.dp)
+            ChunkyIconButton(painterResource(R.drawable.ic_search), "Search", { searchTyped() }, chunk = Chunks.ice(), size = 48.dp)
         }
         Spacer(Modifier.height(10.dp))
         LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

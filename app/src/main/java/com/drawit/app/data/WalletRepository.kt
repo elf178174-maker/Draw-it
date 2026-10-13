@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.UUID
 
 /** One entry in the ink history shown on the profile. */
 data class InkTransaction(val kind: RewardKind, val amount: Int, val label: String, val at: Long)
@@ -20,7 +21,11 @@ data class WalletState(
     /** Most recent first, capped at [WalletRepository.HISTORY_LIMIT]. */
     val history: List<InkTransaction> = emptyList(),
     /** False until the one-off welcome / back-pay has run. */
-    val initialized: Boolean = false
+    val initialized: Boolean = false,
+    /** Stable id for this wallet, carried in backups so one source only pays once. */
+    val id: String = "",
+    /** Backups whose ink has already been brought onto this phone. */
+    val applied: Set<String> = emptySet()
 )
 
 /**
@@ -75,9 +80,21 @@ class WalletRepository(context: Context) {
         prefs.edit().apply { if (json == null) remove(KEY_WELCOME) else putString(KEY_WELCOME, json) }.apply()
     }
 
-    /** Replaces everything, used when restoring a backup onto a fresh phone. */
+    /**
+     * Replaces everything, used when restoring a backup onto a fresh phone. The
+     * restored wallet keeps its own id but this phone's record of applied backups.
+     */
     @Synchronized
-    fun restore(state: WalletState) = commit(state.copy(initialized = true))
+    fun restore(state: WalletState) {
+        val s = _state.value
+        commit(state.copy(initialized = true, id = state.id.ifEmpty { s.id }, applied = s.applied + state.applied))
+    }
+
+    @Synchronized
+    fun markApplied(key: String) {
+        val s = _state.value
+        if (key !in s.applied) commit(s.copy(applied = s.applied + key))
+    }
 
     private fun prepend(list: List<InkTransaction>, t: InkTransaction) = (listOf(t) + list).take(HISTORY_LIMIT)
 
@@ -95,6 +112,8 @@ class WalletRepository(context: Context) {
             .putLong(KEY_PERFECT_WEEK, state.rewards.perfectWeekPaid)
             .putString(KEY_HISTORY, historyToJson(state.history).toString())
             .putBoolean(KEY_INITIALIZED, state.initialized)
+            .putString(KEY_ID, state.id)
+            .putStringSet(KEY_APPLIED, state.applied)
             .apply()
         _state.value = state
     }
@@ -111,7 +130,9 @@ class WalletRepository(context: Context) {
             perfectWeekPaid = prefs.getLong(KEY_PERFECT_WEEK, -1L)
         ),
         history = runCatching { historyFromJson(JSONArray(prefs.getString(KEY_HISTORY, "[]"))) }.getOrDefault(emptyList()),
-        initialized = prefs.getBoolean(KEY_INITIALIZED, false)
+        initialized = prefs.getBoolean(KEY_INITIALIZED, false),
+        id = prefs.getString(KEY_ID, null) ?: UUID.randomUUID().toString().also { prefs.edit().putString(KEY_ID, it).apply() },
+        applied = prefs.getStringSet(KEY_APPLIED, null)?.toSet() ?: emptySet()
     )
 
     companion object {
@@ -128,6 +149,8 @@ class WalletRepository(context: Context) {
         private const val KEY_HISTORY = "wallet_history"
         private const val KEY_INITIALIZED = "wallet_initialized"
         private const val KEY_WELCOME = "wallet_welcome_pending"
+        private const val KEY_ID = "wallet_id"
+        private const val KEY_APPLIED = "wallet_applied_backups"
 
         fun historyToJson(list: List<InkTransaction>): JSONArray = JSONArray().apply {
             list.forEach {
