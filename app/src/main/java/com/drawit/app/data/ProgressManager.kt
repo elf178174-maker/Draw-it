@@ -180,9 +180,9 @@ class ProgressManager(
      * A backup from the first 2.0 builds has one lump of ink. Re-file it by
      * source the same way the phone's own wallet was, so merging recognises
      * the welcome gift and days it already has. What's left belongs to the
-     * wallet that made it. Without an id, it counts as this phone's own only
-     * when this phone already had every drawing in it ([alreadyHad]), which
-     * is how its own early backups look; otherwise it stays separate.
+     * wallet that made it. Without an id, it counts as this phone's own when
+     * this phone already had drawings from it ([alreadyHad]), which is how its
+     * own early backups look; otherwise it stays separate.
      */
     private fun splitBackupLump(saved: WalletState, contents: BackupFormat.Contents, alreadyHad: Boolean): WalletState {
         val lumpKey = saved.earnedBy.keys.singleOrNull() ?: return saved
