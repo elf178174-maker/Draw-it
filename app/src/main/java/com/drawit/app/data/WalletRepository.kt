@@ -149,6 +149,26 @@ class WalletRepository(context: Context) {
         prefs.edit().apply { if (json == null) remove(KEY_WELCOME) else putString(KEY_WELCOME, json) }.apply()
     }
 
+    /**
+     * True while this wallet is still one lump of ink from the first 2.0
+     * builds, before ink was counted per source. [splitLegacy] fixes that.
+     */
+    fun hasLegacyLump(): Boolean = prefs.getBoolean(KEY_LEGACY, false)
+
+    /**
+     * Re-files a legacy lump under the sources it was really paid for, so
+     * later merges can recognise it. [pieces] come out of this wallet's own
+     * count; whatever doesn't fit stays its own.
+     */
+    @Synchronized
+    fun splitLegacy(pieces: Map<String, Int>) {
+        val s = _state.value
+        val (moved, rest) = splitLump(s.earnedBy[s.id] ?: 0, pieces)
+        val earned = s.earnedBy - s.id + moved + (if (rest > 0) mapOf(s.id to rest) else emptyMap())
+        prefs.edit().remove(KEY_LEGACY).apply()
+        commit(s.copy(earnedBy = maxEach(s.earnedBy - s.id, earned)))
+    }
+
     /** Folds a wallet from a backup into this one. Returns the change in balance. */
     @Synchronized
     fun mergeFrom(incoming: WalletState): Int {
@@ -157,6 +177,9 @@ class WalletRepository(context: Context) {
         commit(merged)
         return merged.balance - s.balance
     }
+
+    private fun maxEach(a: Map<String, Int>, b: Map<String, Int>): Map<String, Int> =
+        (a.keys + b.keys).associateWith { maxOf(a[it] ?: 0, b[it] ?: 0) }
 
     private fun prepend(list: List<InkTransaction>, t: InkTransaction) = (listOf(t) + list).take(HISTORY_LIMIT)
 
@@ -185,6 +208,10 @@ class WalletRepository(context: Context) {
     private fun read(): WalletState {
         val id = prefs.getString(KEY_ID, null) ?: UUID.randomUUID().toString().also { prefs.edit().putString(KEY_ID, it).apply() }
         val earnedBy = prefs.getString(KEY_EARNED_BY, null)?.let { runCatching { countsFromJson(JSONObject(it)) }.getOrNull() }
+        if (earnedBy == null && prefs.getInt(KEY_EARNED, 0) > 0) {
+            // Written by a build that kept one total: flag it until it has been split.
+            prefs.edit().putBoolean(KEY_LEGACY, true).apply()
+        }
         val spentBy = prefs.getString(KEY_SPENT_BY, null)?.let { runCatching { countsFromJson(JSONObject(it)) }.getOrNull() }
         return WalletState(
             // Wallets from before ink was counted per source keep their totals as their own.
@@ -225,6 +252,24 @@ class WalletRepository(context: Context) {
         private const val KEY_INITIALIZED = "wallet_initialized"
         private const val KEY_WELCOME = "wallet_welcome_pending"
         private const val KEY_ID = "wallet_id"
+        private const val KEY_LEGACY = "wallet_legacy_lump"
+
+        /**
+         * Shares [lump] out among [pieces] in order, each up to its amount.
+         * Returns what each piece got and what was left over.
+         */
+        fun splitLump(lump: Int, pieces: Map<String, Int>): Pair<Map<String, Int>, Int> {
+            var left = lump.coerceAtLeast(0)
+            val moved = LinkedHashMap<String, Int>()
+            pieces.forEach { (key, amount) ->
+                val take = minOf(left, amount.coerceAtLeast(0))
+                if (take > 0) {
+                    moved[key] = take
+                    left -= take
+                }
+            }
+            return moved to left
+        }
 
         fun legacyCounts(source: String, total: Int): Map<String, Int> =
             if (total > 0) mapOf(source to total) else emptyMap()

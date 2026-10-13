@@ -164,7 +164,7 @@ class ProgressManager(
      */
     @Synchronized
     fun importInk(contents: BackupFormat.Contents): InkImport {
-        val saved = contents.wallet
+        val saved = contents.wallet?.let { if (contents.walletIsLump) splitBackupLump(it, contents) else it }
         val delta = if (saved != null) {
             wallet.mergeFrom(saved)
         } else {
@@ -174,6 +174,32 @@ class ProgressManager(
             )
         }
         return InkImport(delta, alreadyAdded = delta == 0 && (saved == null || saved.balance > 0))
+    }
+
+    /**
+     * A backup from the first 2.0 builds has one lump of ink. Re-file it by
+     * source the same way the phone's own wallet was, so merging recognises
+     * the welcome gift and days it already has. What's left belongs to the
+     * wallet that made it, or to this phone when it doesn't say, which is the
+     * case for this phone's own early backups.
+     */
+    private fun splitBackupLump(saved: WalletState, contents: BackupFormat.Contents): WalletState {
+        val lumpKey = saved.earnedBy.keys.singleOrNull() ?: return saved
+        val owner = saved.id.ifEmpty { wallet.state.value.id }
+        val pieces = legacyPieces(contents.drawings.map { dayOf(it.createdAt) }, contents.streak?.best ?: 0)
+        val (moved, rest) = WalletRepository.splitLump(saved.earnedBy[lumpKey] ?: 0, pieces)
+        val spent = saved.spentBy.values.sum()
+        return saved.copy(
+            earnedBy = moved + (if (rest > 0) mapOf(owner to rest) else emptyMap()),
+            spentBy = if (spent > 0) mapOf(owner to spent) else emptyMap()
+        )
+    }
+
+    /** Re-files a wallet written by the first 2.0 builds by source, once. */
+    @Synchronized
+    fun splitLegacyWallet(drawings: List<Drawing>) {
+        if (!wallet.hasLegacyLump()) return
+        wallet.splitLegacy(legacyPieces(drawings.map { dayOf(it.createdAt) }, streak.state.value.best))
     }
 
     /** True while the avatar is still the starter look with no name, so a backup's look may replace it. */
@@ -311,6 +337,10 @@ class ProgressManager(
          * can only ever be paid once: each day's drawing ink, and each goal the
          * best streak reached. Adds up to [Economy.retroactive].
          */
+        /** What a one-lump wallet was paid for, in the order to share the lump out. */
+        fun legacyPieces(drawingDays: List<Long>, best: Int): Map<String, Int> =
+            linkedMapOf(WalletRepository.WELCOME_SOURCE to Economy.WELCOME_GIFT) + retroSources(drawingDays, best)
+
         fun retroSources(drawingDays: List<Long>, best: Int): Map<String, Int> {
             val days = drawingDays.groupingBy { it }.eachCount().entries.associate { (day, n) ->
                 WalletRepository.daySource(day) to

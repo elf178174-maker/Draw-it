@@ -62,6 +62,8 @@ class DrawItApp : Application() {
             drawings.load()
             // First run of this version: welcome gift and back-pay for the album.
             progress.migrateIfNeeded(drawings.snapshot())
+            // Wallets from the first 2.0 builds get their ink filed by source.
+            progress.splitLegacyWallet(drawings.snapshot())
         }
         // Make sure the alarm exists even if it was dropped by the system.
         ReminderScheduler.apply(this, settings.settings.value)

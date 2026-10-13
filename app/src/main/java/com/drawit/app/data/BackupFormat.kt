@@ -22,6 +22,8 @@ object BackupFormat {
     data class Contents(
         val format: Int,
         val exportedAt: Long?,
+        /** The wallet only has totals (early 2.0 builds), so its ink is one lump. */
+        val walletIsLump: Boolean = false,
         val drawings: List<Drawing>,
         val streak: StreakState?,
         val wallet: WalletState?,
@@ -87,6 +89,7 @@ object BackupFormat {
     fun parse(manifest: JSONObject): Contents = Contents(
         format = manifest.optInt("format", 1),
         exportedAt = manifest.optLong("exportedAt", 0L).takeIf { it > 0L },
+        walletIsLump = manifest.optJSONObject("wallet")?.has("earnedBy") == false,
         drawings = readDrawings(manifest),
         streak = readStreak(manifest),
         wallet = readWallet(manifest),
