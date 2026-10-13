@@ -1,48 +1,77 @@
 # Draw it
 
-A small Android app that reminds you to draw, gives you somewhere to look for
-ideas, and keeps a dated album of everything you finish.
+An Android app that reminds you to draw, gives you somewhere to look for
+ideas, and keeps a dated album of everything you finish. A streak flame that
+evolves, chests of ink, an avatar to dress up and Foxy the fox make keeping the
+habit feel good.
 
 Everything lives on the phone. There is no account, no server, and nothing is
 uploaded anywhere.
 
 ## What it does
 
-**Reminder** — pick a time and pick your days, either every day or a specific
-set of them. At that time the app posts a notification telling you it's time to
-draw. The alarm re-arms itself after each firing and survives reboots, app
+**Today** is the home screen. It shows your streak flame, this week, today's
+drawing prompt (or a Pinterest pin you picked to draw), the next reminder with
+a live countdown, and your latest drawings. Your avatar, streak and ink sit in
+the bar along the top.
+
+**Streak** grows every day you add a drawing. Saving a drawing plays a
+celebration: the flame ignites, the number rolls over, each day of the week
+pops in on a rising scale, and Foxy the fox cheers you on. Extra drawings on a
+day that already counted get their own shorter "saved" moment.
+
+**The flame evolves** as the streak grows. There are nine looks in all: Ember
+(not drawn yet), Spark, Blaze (7 days), Inferno (14), Azure (28), Cosmic (50),
+Solar (100), Phoenix (200) and Eternal (365). Each new tier gets a full
+evolution scene with a charge-up, a flash and the reveal.
+
+**Goals** are at 3, 7, 14, 28, 50, 100, 150, 200, 365, 500, 730 and 1000 days.
+Each one is a medal on the streak screen's goal path. Reaching it pays out a
+chest of ink: the chest drops in, rattles, leaks light and bursts open.
+
+**Ink** is the app's currency, earned by drawing:
+
+- 20 for the day's first drawing, plus a streak bonus that grows with your flame
+- 5 for each extra drawing, up to 3 a day
+- 50 for a perfect Monday-to-Sunday week
+- the goal chests
+
+On first launch after updating, you get a welcome gift and back pay for every
+drawing already in your album.
+
+**Profile and avatar** gives you your own character, dressed from a shop of
+over a hundred items: backgrounds, wings, skin tones, hairstyles and colours,
+eyes, mouths, tops, glasses and face paint, hats, things to hold, and animated
+auras. Items come in five rarities. Eight can only be won by streak, from the
+Fire Aura at 7 days up to the Royal Robe at 365. You can try anything on before
+buying. The shop also sells streak freezes.
+
+**Streak freezes** protect your streak. You earn one a week and can buy more
+with ink, up to three. Miss a day and a freeze is spent for you automatically:
+the streak holds, it just doesn't grow that day, and the app tells you next
+time you open it. If you run out, a missed day ends the run.
+
+**Inspiration** is a native feed of Pinterest results with topic chips and a
+search box. Tap a pin to see it big, save it, or set it as today's drawing.
+Saved pins have their own tab. The full Pinterest site is still there under
+**Browse** if the feed can't load.
+
+**Album** keeps your finished drawings. Photograph a drawing (or pick a photo
+you already took), name it, and it's saved with the date and time. The album
+is a searchable grid; tap a drawing to see it full size, edit it or delete it.
+
+**Reminder** lets you pick a time and your days. The app posts a notification
+at that time. The alarm re-arms after each firing and survives reboots,
 updates and time-zone changes.
 
-**Inspiration** — Pinterest opens inside the app, with a row of topics
-(sketchbook, portraits, hands, anatomy, perspective, and more) so you can scroll
-for reference without leaving. Your session is kept while the app is open, and
-there's a button to hand the current page to your browser.
+**Backup** lives in Settings and exports everything to one `.zip`: every photo
+with its name, description and date, plus your streak, ink, avatar, owned items
+and saved pins. Import reads it back on a new phone.
 
-**Album** — when a drawing is done, photograph it (or pick a photo you already
-took), give it a name and an optional description, and it's saved with the date
-and time. The album is a searchable grid; tapping a drawing opens it full size
-with its details, which you can edit or delete later.
-
-**Streak** — every day you add a drawing, the streak grows, and the save turns
-into a small celebration: rings push out, paper confetti scatters, the number
-rolls up, a warm chime plays and the phone buzzes in a pattern that builds as
-the number lands. Milestones (3, 7, 14, 30, 50, 100, a year…) get a longer
-version of all of it. Tap the streak card for the full picture — this week,
-your longest run, the last ten weeks as a grid, and every milestone.
-
-**Streak freezes** — you earn one freeze a week, up to three. Miss a day and a
-freeze is spent for you automatically: the streak holds, it just doesn't grow
-that day, and the app tells you what happened next time you open it. Run out of
-freezes and a missed day ends the run, so they still matter.
-
-**Backup** — Settings can export your whole album to a single `.zip`: every
-photo, its name, its description, its date, and your streak. Import reads one
-back on a new phone. Drawings you already have are skipped, so importing the
-same file twice is safe.
-
-**Today** — the home screen shows your streak and week at a glance, the next
-reminder with a live countdown, a daily drawing prompt, and the drawings you
-added most recently.
+- Backups made by Draw it 1.0 still import. Their drawings and streak come
+  back, and you're paid the ink they would have earned.
+- Drawings you already have are skipped, so importing the same file twice is
+  safe.
 
 ## Getting the APK
 
@@ -64,8 +93,10 @@ application id, so it can sit next to the release build if you want to compare.
 - Notification permission, which the app asks for on first launch. Without it
   the reminder has no way to reach you; the Reminder screen will tell you and
   link straight to the setting.
-- Sound and vibration for the streak celebration are on by default and can be
-  turned off independently in Settings.
+- Sound and vibration are on by default. You can turn each off separately in
+  Settings, which also has a sound check.
+- The Inspiration feed needs an internet connection. Everything else works
+  offline.
 - Exact alarms. On Android 13 and newer this is granted on install. On Android
   12 it is a setting, and the Reminder screen links straight to it. Without it
   Android parks the reminder while the phone is idle and only delivers it when
@@ -111,31 +142,47 @@ Requires JDK 17 and the Android SDK (compile SDK 34).
 
 ## How it's put together
 
-- Kotlin and Jetpack Compose, Material 3 with a custom warm paper-and-ink
-  palette built around the logo orange.
-- Drawings are JPEGs in the app's private storage plus a small JSON index;
-  reminder preferences, the streak and its freezes live in `SharedPreferences`.
-  No database, no network layer.
-- The streak is settled lazily: opening the app works out how many days were
-  missed, spends that many freezes if it can, and otherwise resets. Days are
-  local epoch days, so the streak turns over at your midnight, not UTC.
-- Backups are a plain `.zip` — `manifest.json` plus a `photos/` folder — so the
-  contents stay readable without the app.
-- The celebration sounds are synthesised mallet tones generated for this
-  project, not sampled audio; see `tools/make_sounds.py`.
+- Kotlin and Jetpack Compose, with a chunky Duolingo-inspired design system:
+  the Nunito font, 3D-press buttons, and a palette built around the logo
+  orange.
+- All the characters and rewards are drawn in code on a Canvas, not shipped as
+  images: Foxy, the avatar and its items, flames, chests, medals and the ink
+  drop. One shared frame clock drives their animation, so they redraw without
+  recomposing.
+- Drawings are JPEGs in the app's private storage plus a small JSON index. The
+  streak, wallet, profile and settings live in `SharedPreferences`. There is
+  no database, account or server.
+- The streak is settled lazily. Opening the app works out how many days were
+  missed, then spends freezes if it can and otherwise resets the streak. Days
+  are local epoch days, so the streak turns over at your midnight, not UTC.
+- The ink rules live in `model/Economy.kt`. `data/ProgressManager.kt` applies
+  them when a drawing is saved.
+- Backups are a plain `.zip` (`manifest.json` plus a `photos/` folder), so the
+  contents stay readable without the app. `data/BackupFormat.kt` writes
+  format 2 and reads both 1 and 2.
+- The Pinterest feed loads pinterest.com in a hidden WebView and reads its
+  search results through a JavaScript bridge, then shows them in a native
+  grid. If Pinterest changes its page, the feed falls back to reading the page
+  itself, and the Browse tab always works.
+- Every sound is synthesised for this project, not sampled: bells, marimba,
+  glockenspiel and noise sweeps, rendered to OGG by `tools/make_sounds.py`.
+  Haptics use Android's composition primitives where the phone supports them.
 - `AlarmManager` drives the reminder as a one-shot alarm that re-arms after
   every firing, so day-of-week schedules stay correct across daylight saving.
-- `BootReceiver` restores the alarm after a reboot, an app update, or a clock
-  change.
+  `BootReceiver` restores it after a reboot, an update or a clock change.
 
 ```
 app/src/main/java/com/drawit/app/
-├── data/         drawings, reminder settings, streak, backup zip
-├── feedback/     the celebration's sound and haptics
+├── data/         drawings, streak, wallet, profile, saved pins, backup zip
+├── model/        flame tiers and the ink economy
+├── feedback/     sounds and haptics
 ├── reminder/     alarm scheduling, notifications, boot restore
 └── ui/
-    ├── components/   buttons, cards, fields, bottom bar, streak celebration
+    ├── art/          Foxy, the avatar and its items, flames, chests, medals
+    ├── celebrate/    the after-drawing celebration, welcome and streak notices
+    ├── components/   buttons, cards, top bar, bottom bar, week strip, confetti
+    ├── inspire/      the Pinterest feed
     ├── screens/      today, inspiration, album, detail, add, reminder,
-    │                 streak, settings
-    └── theme/        colour, type, shapes
+    │                 streak, profile, shop, settings
+    └── theme/        colour, type
 ```

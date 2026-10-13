@@ -26,7 +26,8 @@ object Notifier {
         "Your page is waiting" to "Draw something small. It still counts.",
         "Time to draw" to "Start with one line and see where it goes.",
         "Pencil time" to "No pressure, no perfect. Just draw.",
-        "Your page is waiting" to "Today's drawing is the only one that matters."
+        "Your page is waiting" to "Today's drawing is the only one that matters.",
+        "Foxy's waiting" to "One drawing today and the flame catches."
     )
 
     fun ensureChannel(context: Context) {
@@ -57,9 +58,13 @@ object Notifier {
     /** A nudge that knows what is at stake. */
     private fun streakLine(state: com.drawit.app.data.StreakState): Pair<String, String> {
         val drewToday = state.drewOn(LocalDate.now())
+        val goal = com.drawit.app.model.Economy.nextGoal(state.current)
         return when {
             drewToday ->
                 "Already done today" to "Your streak is safe. Draw again if you feel like it."
+            goal != null && goal == state.current + 1 && state.current >= 2 ->
+                "One drawing from your $goal-day goal" to
+                    "Draw today and Foxy opens a chest of ${com.drawit.app.model.Economy.goalReward(goal)} ink."
             state.current >= 2 && state.freezes == 0 ->
                 "Your ${state.current}-day streak is on the line" to
                     "No freezes left. Draw today or it goes back to zero."
