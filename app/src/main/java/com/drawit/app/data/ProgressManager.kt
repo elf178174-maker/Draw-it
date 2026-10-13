@@ -33,16 +33,6 @@ data class Celebration(
 /** What importing a backup did to the wallet. */
 data class InkImport(val amount: Int, val alreadyAdded: Boolean)
 
-/** Identifies where a backup's ink came from, so it is only ever brought in once. */
-fun backupKey(contents: BackupFormat.Contents): String {
-    val walletId = contents.wallet?.id.orEmpty()
-    return when {
-        walletId.isNotEmpty() -> "wallet:$walletId"
-        contents.exportedAt != null -> "export:${contents.exportedAt}"
-        else -> "drawings:" + contents.drawings.map { it.id }.sorted().joinToString(",").hashCode()
-    }
-}
-
 /** The one-off gift shown the first time the new version opens. */
 data class WelcomeGift(val welcome: Int, val backPay: Int, val drawings: Int, val unlocked: List<AvatarItem>) {
     val total: Int get() = welcome + backPay
@@ -96,16 +86,6 @@ class ProgressManager(
         .put("unlocked", JSONArray().apply { unlocked.forEach { put(it.id) } })
         .toString()
 
-    /**
-     * True while the wallet holds nothing but the welcome gift. Only then may
-     * a backup replace it: otherwise newer ink and purchases would be lost, or
-     * the same drawings paid for again.
-     */
-    fun walletIsPristine(): Boolean {
-        val w = wallet.state.value
-        return w.spent == 0 && w.earned <= Economy.WELCOME_GIFT
-    }
-
     /** Counts a drawing that was just saved and pays out whatever it earned. */
     @Synchronized
     fun recordDrawing(drawings: List<Drawing>, today: LocalDate = LocalDate.now()): Celebration {
@@ -122,7 +102,16 @@ class ProgressManager(
             state = wallet.state.value.rewards
         )
         val balanceBefore = wallet.state.value.balance
-        reward.lines.forEach { line -> wallet.credit(line.amount, line.kind, line.label) }
+        reward.lines.forEach { line ->
+            // A day's drawing ink and a perfect week are paid once however many
+            // phones they happen on; goals belong to this wallet.
+            val source = when (line.kind) {
+                RewardKind.Daily, RewardKind.StreakBonus, RewardKind.Extra -> WalletRepository.daySource(today.toEpochDay())
+                RewardKind.PerfectWeek -> WalletRepository.weekSource(Economy.weekKey(today))
+                else -> null
+            }
+            wallet.credit(line.amount, line.kind, line.label, source)
+        }
         wallet.updateRewards(reward.state)
         val unlocked = if (outcome.extended) unlockStreakRewards() else emptyList()
         return Celebration(
@@ -146,9 +135,12 @@ class ProgressManager(
     fun migrateIfNeeded(drawings: List<Drawing>) {
         if (wallet.state.value.initialized) return
         val state = streak.state.value
-        val backPay = Economy.retroactive(drawings.map { dayOf(it.createdAt) }, state.best)
-        wallet.credit(Economy.WELCOME_GIFT, RewardKind.Welcome, "Welcome gift")
-        if (backPay > 0) wallet.credit(backPay, RewardKind.Retro, "Your ${drawings.size} past drawings")
+        // Both are paid "once" per source, so this is safe even after an import.
+        val welcome = wallet.creditOnce(mapOf(WalletRepository.WELCOME_SOURCE to Economy.WELCOME_GIFT), RewardKind.Welcome, "Welcome gift")
+        val backPay = wallet.creditOnce(
+            retroSources(drawings.map { dayOf(it.createdAt) }, state.best),
+            RewardKind.Retro, "Your ${drawings.size} past drawings"
+        )
         wallet.updateRewards(
             wallet.state.value.rewards.copy(
                 goalRewardedUpTo = Economy.previousGoal(state.current),
@@ -157,68 +149,52 @@ class ProgressManager(
         )
         ensureStarterLook(since = drawings.map { it.createdAt }.filter { it > 0L }.minOrNull())
         val unlocked = unlockStreakRewards()
-        val gift = WelcomeGift(Economy.WELCOME_GIFT, backPay, drawings.size, unlocked)
+        val gift = WelcomeGift(welcome, backPay, drawings.size, unlocked)
         wallet.savePendingWelcome(gift.toJson())
         wallet.markInitialized()
         _welcome.value = gift
     }
 
     /**
-     * Restores ink from a backup onto a fresh phone. Old backups have no
-     * wallet, so their drawings are back-paid instead. Returns the balance.
+     * Brings a backup's ink onto this phone. A backup's wallet is merged
+     * source by source, so ink this phone already has (from an earlier import,
+     * or a backup of a backup) is never counted twice. Old backups have no
+     * wallet, so their drawing days are back-paid, again once per day.
+     * Returns the change in balance.
      */
     @Synchronized
-    fun restoreWallet(saved: WalletState?, drawings: List<Drawing>, savedStreak: StreakState?): Int {
-        if (saved != null) {
-            wallet.restore(saved)
-            return saved.balance
+    fun importInk(contents: BackupFormat.Contents): InkImport {
+        val saved = contents.wallet
+        val delta = if (saved != null) {
+            wallet.mergeFrom(saved)
+        } else {
+            wallet.creditOnce(
+                retroSources(contents.drawings.map { dayOf(it.createdAt) }, contents.streak?.best ?: 0),
+                RewardKind.Retro, "Restored ${contents.drawings.size} drawings"
+            )
         }
-        val best = savedStreak?.best ?: 0
-        val current = savedStreak?.current ?: 0
-        val backPay = Economy.retroactive(drawings.map { dayOf(it.createdAt) }, best)
-        if (backPay > 0) wallet.credit(backPay, RewardKind.Retro, "Restored ${drawings.size} drawings")
-        wallet.updateRewards(wallet.state.value.rewards.copy(goalRewardedUpTo = Economy.previousGoal(current)))
-        wallet.markInitialized()
-        return backPay
+        return InkImport(delta, alreadyAdded = delta == 0 && (saved == null || saved.balance > 0))
+    }
+
+    /** True while the avatar is still the starter look with no name, so a backup's look may replace it. */
+    fun profileIsUntouched(): Boolean {
+        val p = profile.profile.value
+        val starter = AvatarCatalog.defaultLook.mapKeys { it.key.name }
+        return p.name.isBlank() && (p.equipped.isEmpty() || p.equipped == starter)
     }
 
     /**
-     * Brings a backup's ink onto this phone, at most once per source wallet
-     * (or per export, for backups from before wallets had ids).
-     *  - [replace]: the phone has nothing of its own yet, so the backup's
-     *    wallet takes over; old backups are paid for their drawings instead.
-     *  - Otherwise the backup's balance is added on top, or for an old backup,
-     *    the ink its new drawing days would have earned.
-     * [before] is this phone's album and [localBest] its best streak, both
-     * from before the import.
+     * Takes the backup's outfit and name, but only onto an avatar nobody has
+     * dressed yet. Owned pieces are merged separately. Returns true if it did.
      */
     @Synchronized
-    fun importInk(
-        contents: BackupFormat.Contents,
-        before: List<Drawing>,
-        added: List<Drawing>,
-        localBest: Int,
-        replace: Boolean
-    ): InkImport {
-        val w = wallet.state.value
-        val saved = contents.wallet
-        val key = backupKey(contents)
-        if (key in w.applied || (saved != null && saved.id.isNotEmpty() && saved.id == w.id)) {
-            return InkImport(0, alreadyAdded = true)
-        }
-        val amount = when {
-            replace -> restoreWallet(saved, added, contents.streak)
-            saved != null -> saved.balance.also { if (it > 0) wallet.credit(it, RewardKind.Retro, "Ink from your backup") }
-            else -> {
-                val oldDays = before.map { dayOf(it.createdAt) }
-                val newDays = oldDays + added.map { dayOf(it.createdAt) }
-                val incomingBest = contents.streak?.best ?: 0
-                val owed = Economy.retroactive(newDays, maxOf(localBest, incomingBest)) - Economy.retroactive(oldDays, localBest)
-                owed.coerceAtLeast(0).also { if (it > 0) wallet.credit(it, RewardKind.Retro, "Restored ${added.size} drawings") }
-            }
-        }
-        wallet.markApplied(key)
-        return InkImport(amount, alreadyAdded = false)
+    fun adoptLookIfUntouched(incoming: Profile): Boolean {
+        if (!profileIsUntouched()) return false
+        val clean = sanitizeProfile(incoming)
+        val current = profile.profile.value
+        if (clean.name.isBlank() && (clean.equipped.isEmpty() || clean.equipped == current.equipped)) return false
+        profile.update { p -> p.copy(name = clean.name.take(24), equipped = clean.equipped, owned = p.owned + clean.owned) }
+        return true
     }
 
     /**
@@ -237,9 +213,9 @@ class ProgressManager(
         if (updated != r) wallet.updateRewards(updated)
     }
 
-    /** Moves the profile's "drawing since" back to the earliest drawing, if that is earlier. */
-    fun noteFirstDrawing(drawings: List<Drawing>) {
-        val first = drawings.map { it.createdAt }.filter { it > 0L }.minOrNull() ?: return
+    /** Moves the profile's "drawing since" back to the earliest drawing (or [since]), if that is earlier. */
+    fun noteFirstDrawing(drawings: List<Drawing>, since: Long? = null) {
+        val first = (drawings.map { it.createdAt } + listOfNotNull(since)).filter { it > 0L }.minOrNull() ?: return
         profile.update { p -> if (p.createdAt == 0L || first < p.createdAt) p.copy(createdAt = first) else p }
     }
 
@@ -329,5 +305,19 @@ class ProgressManager(
             Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()).toLocalDate().toEpochDay()
 
         fun drawnDays(list: List<Drawing>): Set<Long> = list.map { dayOf(it.createdAt) }.toSet()
+
+        /**
+         * Back-pay for drawings made before ink existed, split by source so it
+         * can only ever be paid once: each day's drawing ink, and each goal the
+         * best streak reached. Adds up to [Economy.retroactive].
+         */
+        fun retroSources(drawingDays: List<Long>, best: Int): Map<String, Int> {
+            val days = drawingDays.groupingBy { it }.eachCount().entries.associate { (day, n) ->
+                WalletRepository.daySource(day) to
+                    Economy.DAILY_BASE + minOf(n - 1, Economy.MAX_EXTRAS_PER_DAY) * Economy.EXTRA_DRAWING
+            }
+            val goals = Economy.GOALS.filter { it <= best }.associate { WalletRepository.goalSource(it) to Economy.goalReward(it) }
+            return days + goals
+        }
     }
 }

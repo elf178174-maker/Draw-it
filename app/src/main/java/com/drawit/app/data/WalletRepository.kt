@@ -13,20 +13,66 @@ import java.util.UUID
 /** One entry in the ink history shown on the profile. */
 data class InkTransaction(val kind: RewardKind, val amount: Int, val label: String, val at: Long)
 
+/**
+ * The wallet. Ink is counted per source rather than as one total, so wallets
+ * from different phones and backups can be merged without counting anything
+ * twice: each source only ever grows, and a merge keeps the larger count of
+ * each. Sources are
+ *  - this wallet's [id], for goals, refunds and everything it spends;
+ *  - `day:<epochDay>` for a day's drawing ink, however many phones paid it;
+ *  - `week:<monday>` for a perfect week;
+ *  - `welcome` and `goal:<n>` for the one-off welcome gift and back-paid goals.
+ */
 data class WalletState(
-    val balance: Int = 0,
-    val earned: Int = 0,
-    val spent: Int = 0,
+    val earnedBy: Map<String, Int> = emptyMap(),
+    val spentBy: Map<String, Int> = emptyMap(),
     val rewards: RewardState = RewardState(),
     /** Most recent first, capped at [WalletRepository.HISTORY_LIMIT]. */
     val history: List<InkTransaction> = emptyList(),
     /** False until the one-off welcome / back-pay has run. */
     val initialized: Boolean = false,
-    /** Stable id for this wallet, carried in backups so one source only pays once. */
-    val id: String = "",
-    /** Backups whose ink has already been brought onto this phone. */
-    val applied: Set<String> = emptySet()
-)
+    /** Stable id for this wallet: the source its own earnings and spending go under. */
+    val id: String = ""
+) {
+    val earned: Int get() = earnedBy.values.sum()
+    val spent: Int get() = spentBy.values.sum()
+    val balance: Int get() = (earned - spent).coerceAtLeast(0)
+
+    companion object {
+        /** Everything either wallet has seen, each source counted once. Keeps [local]'s id. */
+        fun merge(local: WalletState, incoming: WalletState): WalletState = local.copy(
+            earnedBy = maxEach(local.earnedBy, incoming.earnedBy),
+            spentBy = maxEach(local.spentBy, incoming.spentBy),
+            rewards = mergeRewards(local.rewards, incoming.rewards),
+            history = (local.history + incoming.history).distinct()
+                .sortedByDescending { it.at }
+                .take(WalletRepository.HISTORY_LIMIT),
+            // Still this phone's call: its one-off welcome is safe to run after.
+            initialized = local.initialized
+        )
+
+        private fun maxEach(a: Map<String, Int>, b: Map<String, Int>): Map<String, Int> =
+            (a.keys + b.keys).associateWith { maxOf(a[it] ?: 0, b[it] ?: 0) }
+
+        /**
+         * Goals stay this phone's: they belong to the streak run, which the
+         * import lines up separately once the streaks are merged.
+         */
+        private fun mergeRewards(a: RewardState, b: RewardState): RewardState {
+            val extras = when {
+                b.extrasDay > a.extrasDay -> b.extrasDay to b.extrasCount
+                b.extrasDay == a.extrasDay -> a.extrasDay to maxOf(a.extrasCount, b.extrasCount)
+                else -> a.extrasDay to a.extrasCount
+            }
+            return a.copy(
+                lastRewardDay = maxOf(a.lastRewardDay, b.lastRewardDay),
+                extrasDay = extras.first,
+                extrasCount = extras.second,
+                perfectWeekPaid = maxOf(a.perfectWeekPaid, b.perfectWeekPaid)
+            )
+        }
+    }
+}
 
 /**
  * Ink, the currency. Earned by drawing, spent in the shop. Lives in the same
@@ -39,17 +85,41 @@ class WalletRepository(context: Context) {
     private val _state = MutableStateFlow(read())
     val state: StateFlow<WalletState> = _state.asStateFlow()
 
+    /** Adds [amount] to [source], or to this wallet's own count when no source is given. */
     @Synchronized
-    fun credit(amount: Int, kind: RewardKind, label: String, rewards: RewardState? = null) {
-        if (amount <= 0 && rewards == null) return
+    fun credit(amount: Int, kind: RewardKind, label: String, source: String? = null) {
+        if (amount <= 0) return
         val s = _state.value
-        val updated = s.copy(
-            balance = s.balance + amount.coerceAtLeast(0),
-            earned = s.earned + amount.coerceAtLeast(0),
-            rewards = rewards ?: s.rewards,
-            history = if (amount > 0) prepend(s.history, InkTransaction(kind, amount, label, now())) else s.history
+        val key = source ?: s.id
+        commit(
+            s.copy(
+                earnedBy = s.earnedBy + (key to (s.earnedBy[key] ?: 0) + amount),
+                history = prepend(s.history, InkTransaction(kind, amount, label, now()))
+            )
         )
-        commit(updated)
+    }
+
+    /**
+     * Raises each source to at least its amount, for one-off payments that
+     * must never be paid twice (the welcome gift, back-pay for past days).
+     * Returns how much ink that actually added; one history line covers it.
+     */
+    @Synchronized
+    fun creditOnce(amounts: Map<String, Int>, kind: RewardKind, label: String): Int {
+        val s = _state.value
+        var added = 0
+        val earned = s.earnedBy.toMutableMap()
+        amounts.forEach { (key, amount) ->
+            val have = earned[key] ?: 0
+            if (amount > have) {
+                added += amount - have
+                earned[key] = amount
+            }
+        }
+        if (added > 0) {
+            commit(s.copy(earnedBy = earned, history = prepend(s.history, InkTransaction(kind, added, label, now()))))
+        }
+        return added
     }
 
     /** Spends [amount] if there is enough. Returns false and changes nothing otherwise. */
@@ -59,8 +129,7 @@ class WalletRepository(context: Context) {
         if (amount <= 0 || s.balance < amount) return false
         commit(
             s.copy(
-                balance = s.balance - amount,
-                spent = s.spent + amount,
+                spentBy = s.spentBy + (s.id to (s.spentBy[s.id] ?: 0) + amount),
                 history = prepend(s.history, InkTransaction(kind, -amount, label, now()))
             )
         )
@@ -80,20 +149,13 @@ class WalletRepository(context: Context) {
         prefs.edit().apply { if (json == null) remove(KEY_WELCOME) else putString(KEY_WELCOME, json) }.apply()
     }
 
-    /**
-     * Replaces everything, used when restoring a backup onto a fresh phone. The
-     * restored wallet keeps its own id but this phone's record of applied backups.
-     */
+    /** Folds a wallet from a backup into this one. Returns the change in balance. */
     @Synchronized
-    fun restore(state: WalletState) {
+    fun mergeFrom(incoming: WalletState): Int {
         val s = _state.value
-        commit(state.copy(initialized = true, id = state.id.ifEmpty { s.id }, applied = s.applied + state.applied))
-    }
-
-    @Synchronized
-    fun markApplied(key: String) {
-        val s = _state.value
-        if (key !in s.applied) commit(s.copy(applied = s.applied + key))
+        val merged = WalletState.merge(s, incoming)
+        commit(merged)
+        return merged.balance - s.balance
     }
 
     private fun prepend(list: List<InkTransaction>, t: InkTransaction) = (listOf(t) + list).take(HISTORY_LIMIT)
@@ -102,6 +164,9 @@ class WalletRepository(context: Context) {
 
     private fun commit(state: WalletState) {
         prefs.edit()
+            .putString(KEY_EARNED_BY, countsToJson(state.earnedBy).toString())
+            .putString(KEY_SPENT_BY, countsToJson(state.spentBy).toString())
+            // Plain totals too, for anyone reading the prefs file by hand.
             .putInt(KEY_BALANCE, state.balance)
             .putInt(KEY_EARNED, state.earned)
             .putInt(KEY_SPENT, state.spent)
@@ -113,34 +178,44 @@ class WalletRepository(context: Context) {
             .putString(KEY_HISTORY, historyToJson(state.history).toString())
             .putBoolean(KEY_INITIALIZED, state.initialized)
             .putString(KEY_ID, state.id)
-            .putStringSet(KEY_APPLIED, state.applied)
             .apply()
         _state.value = state
     }
 
-    private fun read() = WalletState(
-        balance = prefs.getInt(KEY_BALANCE, 0),
-        earned = prefs.getInt(KEY_EARNED, 0),
-        spent = prefs.getInt(KEY_SPENT, 0),
-        rewards = RewardState(
-            lastRewardDay = prefs.getLong(KEY_LAST_REWARD, -1L),
-            extrasDay = prefs.getLong(KEY_EXTRAS_DAY, -1L),
-            extrasCount = prefs.getInt(KEY_EXTRAS_COUNT, 0),
-            goalRewardedUpTo = prefs.getInt(KEY_GOAL_UP_TO, 0),
-            perfectWeekPaid = prefs.getLong(KEY_PERFECT_WEEK, -1L)
-        ),
-        history = runCatching { historyFromJson(JSONArray(prefs.getString(KEY_HISTORY, "[]"))) }.getOrDefault(emptyList()),
-        initialized = prefs.getBoolean(KEY_INITIALIZED, false),
-        id = prefs.getString(KEY_ID, null) ?: UUID.randomUUID().toString().also { prefs.edit().putString(KEY_ID, it).apply() },
-        applied = prefs.getStringSet(KEY_APPLIED, null)?.toSet() ?: emptySet()
-    )
+    private fun read(): WalletState {
+        val id = prefs.getString(KEY_ID, null) ?: UUID.randomUUID().toString().also { prefs.edit().putString(KEY_ID, it).apply() }
+        val earnedBy = prefs.getString(KEY_EARNED_BY, null)?.let { runCatching { countsFromJson(JSONObject(it)) }.getOrNull() }
+        val spentBy = prefs.getString(KEY_SPENT_BY, null)?.let { runCatching { countsFromJson(JSONObject(it)) }.getOrNull() }
+        return WalletState(
+            // Wallets from before ink was counted per source keep their totals as their own.
+            earnedBy = earnedBy ?: legacyCounts(id, prefs.getInt(KEY_EARNED, 0)),
+            spentBy = spentBy ?: legacyCounts(id, prefs.getInt(KEY_SPENT, 0)),
+            rewards = RewardState(
+                lastRewardDay = prefs.getLong(KEY_LAST_REWARD, -1L),
+                extrasDay = prefs.getLong(KEY_EXTRAS_DAY, -1L),
+                extrasCount = prefs.getInt(KEY_EXTRAS_COUNT, 0),
+                goalRewardedUpTo = prefs.getInt(KEY_GOAL_UP_TO, 0),
+                perfectWeekPaid = prefs.getLong(KEY_PERFECT_WEEK, -1L)
+            ),
+            history = runCatching { historyFromJson(JSONArray(prefs.getString(KEY_HISTORY, "[]"))) }.getOrDefault(emptyList()),
+            initialized = prefs.getBoolean(KEY_INITIALIZED, false),
+            id = id
+        )
+    }
 
     companion object {
         const val HISTORY_LIMIT = 40
 
+        const val WELCOME_SOURCE = "welcome"
+        fun daySource(epochDay: Long) = "day:$epochDay"
+        fun weekSource(monday: Long) = "week:$monday"
+        fun goalSource(goal: Int) = "goal:$goal"
+
         private const val KEY_BALANCE = "wallet_balance"
         private const val KEY_EARNED = "wallet_earned"
         private const val KEY_SPENT = "wallet_spent"
+        private const val KEY_EARNED_BY = "wallet_earned_by"
+        private const val KEY_SPENT_BY = "wallet_spent_by"
         private const val KEY_LAST_REWARD = "wallet_last_reward_day"
         private const val KEY_EXTRAS_DAY = "wallet_extras_day"
         private const val KEY_EXTRAS_COUNT = "wallet_extras_count"
@@ -150,7 +225,22 @@ class WalletRepository(context: Context) {
         private const val KEY_INITIALIZED = "wallet_initialized"
         private const val KEY_WELCOME = "wallet_welcome_pending"
         private const val KEY_ID = "wallet_id"
-        private const val KEY_APPLIED = "wallet_applied_backups"
+
+        fun legacyCounts(source: String, total: Int): Map<String, Int> =
+            if (total > 0) mapOf(source to total) else emptyMap()
+
+        fun countsToJson(counts: Map<String, Int>): JSONObject = JSONObject().apply {
+            counts.forEach { (k, v) -> if (v > 0) put(k, v) }
+        }
+
+        fun countsFromJson(o: JSONObject): Map<String, Int> = buildMap {
+            val keys = o.keys()
+            while (keys.hasNext()) {
+                val k = keys.next()
+                val v = o.optInt(k, 0)
+                if (k.isNotEmpty() && v > 0) put(k, v)
+            }
+        }
 
         fun historyToJson(list: List<InkTransaction>): JSONArray = JSONArray().apply {
             list.forEach {

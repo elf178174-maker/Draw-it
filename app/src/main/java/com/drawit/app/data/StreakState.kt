@@ -37,23 +37,32 @@ data class StreakState(
          * before importing doesn't throw the old streak away. Best is the best
          * of everything.
          */
-        fun merge(local: StreakState, incoming: StreakState): StreakState {
+        fun merge(local: StreakState, incoming: StreakState, drawn: Set<Long> = emptySet()): StreakState {
             val best = maxOf(local.best, incoming.best)
-            val frozen = local.frozenDays + incoming.frozenDays
+            // A day that was drawn was never a frozen day, whichever phone says so.
+            val localFrozen = local.frozenDays - drawn
+            val incomingFrozen = incoming.frozenDays - drawn
             if (incoming.lastCountedDay == NEVER) return local.copy(best = best)
             val incomingWins = local.lastCountedDay == NEVER ||
                 incoming.lastCountedDay > local.lastCountedDay ||
                 (incoming.lastCountedDay == local.lastCountedDay && incoming.current > local.current)
-            if (incomingWins) return incoming.copy(best = maxOf(best, incoming.current), frozenDays = frozen)
-            if (incoming.lastCountedDay == local.lastCountedDay) return local.copy(best = best, frozenDays = frozen)
+            if (incomingWins) {
+                return incoming.copy(best = maxOf(best, incoming.current), frozenDays = incomingFrozen + localFrozen)
+            }
+            val mine = local.copy(best = best, frozenDays = localFrozen)
+            if (incoming.lastCountedDay == local.lastCountedDay) return mine
 
             // This phone is more recent: join the backup's run on if it reaches it.
-            if (local.current <= 0 || incoming.current <= 0) return local.copy(best = best, frozenDays = frozen)
-            val start = runStart(local)
-            if (incoming.lastCountedDay < start - 1) return local.copy(best = best, frozenDays = frozen)
-            val overlap = (start..incoming.lastCountedDay).count { it !in local.frozenDays }
+            if (local.current <= 0 || incoming.current <= 0) return mine
+            val start = runStart(mine)
+            if (incoming.lastCountedDay < start - 1) return mine
+            val overlap = (start..incoming.lastCountedDay).count { it !in localFrozen }
             val joined = local.current + (incoming.current - overlap).coerceAtLeast(0)
-            return local.copy(current = joined, best = maxOf(best, joined), frozenDays = frozen)
+            return mine.copy(
+                current = joined,
+                best = maxOf(best, joined),
+                frozenDays = localFrozen + incomingFrozen.filter { it <= incoming.lastCountedDay }
+            )
         }
 
         /** The first day of [s]'s current run, walking back over the days a freeze covered. */

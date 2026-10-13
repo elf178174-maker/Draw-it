@@ -10,7 +10,8 @@ import org.json.JSONObject
  * Format history:
  *  1. drawings + streak (the first version of the app).
  *  2. adds wallet (ink), profile (avatar) and saved references. The wallet's
- *     id was added within format 2, so it may be missing too.
+ *     id and its per-source counts (earnedBy / spentBy) were added within
+ *     format 2, so they may be missing too; totals alone still read.
  *
  * Every field added after format 1 is optional when reading, so any backup
  * ever written still imports.
@@ -67,6 +68,8 @@ object BackupFormat {
                 "wallet",
                 JSONObject()
                     .put("id", wallet.id)
+                    .put("earnedBy", WalletRepository.countsToJson(wallet.earnedBy))
+                    .put("spentBy", WalletRepository.countsToJson(wallet.spentBy))
                     .put("balance", wallet.balance)
                     .put("earned", wallet.earned)
                     .put("spent", wallet.spent)
@@ -128,10 +131,14 @@ object BackupFormat {
 
     private fun readWallet(manifest: JSONObject): WalletState? {
         val o = manifest.optJSONObject("wallet") ?: return null
+        val id = o.optString("id", "")
+        // Early 2.0 backups only have totals; they count as one source of their own.
+        val legacy = id.ifEmpty { "backup:" + manifest.optLong("exportedAt", 0L) }
         return WalletState(
-            balance = o.optInt("balance", 0).coerceAtLeast(0),
-            earned = o.optInt("earned", 0).coerceAtLeast(0),
-            spent = o.optInt("spent", 0).coerceAtLeast(0),
+            earnedBy = o.optJSONObject("earnedBy")?.let(WalletRepository::countsFromJson)
+                ?: WalletRepository.legacyCounts(legacy, o.optInt("earned", o.optInt("balance", 0)).coerceAtLeast(0)),
+            spentBy = o.optJSONObject("spentBy")?.let(WalletRepository::countsFromJson)
+                ?: WalletRepository.legacyCounts(legacy, o.optInt("spent", 0).coerceAtLeast(0)),
             rewards = RewardState(
                 lastRewardDay = o.optLong("lastRewardDay", -1L),
                 extrasDay = o.optLong("extrasDay", -1L),
@@ -141,7 +148,7 @@ object BackupFormat {
             ),
             history = o.optJSONArray("history")?.let { runCatching { WalletRepository.historyFromJson(it) }.getOrNull() } ?: emptyList(),
             initialized = true,
-            id = o.optString("id", "")
+            id = id
         )
     }
 }
